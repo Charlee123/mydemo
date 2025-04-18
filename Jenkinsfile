@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        SNYK_TOKEN = 'bec47eb0-2503-452a-b72d-85e1944b712f'
+        SNYK_TOKEN = 'test'
         SNYK_PATH = 'C:/Users/share/AppData/Roaming/npm/snyk.cmd' // or use escaped backslashes
     }
 
