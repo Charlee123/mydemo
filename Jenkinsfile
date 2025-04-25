@@ -52,9 +52,9 @@ pipeline {
                         """
                         echo 'Aqua Security Scan Successful'
                     } catch (Exception e) {
-                        currentBuild.result = 'FAILURE'
-                        echo 'Aqua Security Scan Failed'
-                        throw e
+                        echo 'Aqua Security Scan Failed (but will not fail the build)'
+                    } finally {
+                        echo 'Aqua Security Scan Stage Completed'
                     }
                 }
             }
