@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 # Jenkins config
 JENKINS_URL = 'http://localhost:8080/'
 USERNAME = 'devsecops'
-API_TOKEN = '11eca10940c16f371ded6738424553213f'
+API_TOKEN = 'test'
 
 # Connect to Jenkins
 server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=API_TOKEN)
