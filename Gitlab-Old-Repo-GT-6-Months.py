@@ -7,12 +7,11 @@ from datetime import datetime, timedelta
 GITLAB_URL = 'https://gitlab.com'
 ACCESS_TOKEN = 'glpat-wJXweM94RF94Vbd-e9xy'  # Secure way to handle tokens
 
-
 # Initialize GitLab connection
 gl = gitlab.Gitlab(GITLAB_URL, private_token=ACCESS_TOKEN)
 
-# Set time threshold (6 months ago)
-six_months_ago = datetime.now() - timedelta(minutes=1)
+# Set time threshold (example: 6 months ago)
+six_months_ago = datetime.now() - timedelta(minutes=1)  # Adjust as needed
 
 # Prepare data for CSV
 repos_data = []
@@ -28,7 +27,18 @@ for group in groups:
 
     for project in projects:
         try:
-            project_detail = gl.projects.get(project.id)
+            # Try to fetch project details
+            try:
+                project_detail = gl.projects.get(project.id)
+            except gitlab.exceptions.GitlabGetError as e:
+                if e.response_code == 404:
+                    print(f"[Warning] Skipping inaccessible repo '{project.name}' (404 Not Found)")
+                    continue
+                else:
+                    print(f"[Error] Failed to fetch project '{project.name}': {e}")
+                    continue
+
+            # Now safe to process project
             last_activity_raw = project_detail.last_activity_at
 
             # Parse last activity timestamp
@@ -37,15 +47,20 @@ for group in groups:
             except ValueError:
                 last_activity = datetime.strptime(last_activity_raw, '%Y-%m-%dT%H:%M:%SZ')
 
+            # Only if repo inactive
             if last_activity < six_months_ago:
-                commits = project_detail.commits.list(per_page=1)
-                if commits:
-                    last_commit = commits[0]
-                    last_commit_date = last_commit.committed_date
-                    last_committer = last_commit.author_name
-                else:
-                    last_commit_date = "No commits"
-                    last_committer = "N/A"
+                try:
+                    commits = project_detail.commits.list(per_page=1)
+                    if commits:
+                        last_commit = commits[0]
+                        last_commit_date = last_commit.committed_date
+                        last_committer = last_commit.author_name
+                    else:
+                        last_commit_date = "No commits"
+                        last_committer = "N/A"
+                except gitlab.exceptions.GitlabListError:
+                    last_commit_date = "Error fetching commits"
+                    last_committer = "Unknown"
 
                 repos_data.append({
                     "Group Name": group.name,
@@ -57,16 +72,19 @@ for group in groups:
                     "Last Committer": last_committer
                 })
 
-        except gitlab.exceptions.GitlabGetError as e:
-            print(f"[Error] Failed to fetch project '{project.name}': {e}")
+        except Exception as ex:
+            print(f"[Unhandled Error] Project '{project.name}': {ex}")
             continue
 
 # Write to CSV
 csv_file = 'inactive_repos.csv'
-with open(csv_file, mode='w', newline='', encoding='utf-8') as file:
-    fieldnames = ["Group Name", "Repo Name", "Repo URL", "Archived", "Last Activity Day", "Last Commit Day", "Last Committer"]
-    writer = csv.DictWriter(file, fieldnames=fieldnames)
-    writer.writeheader()
-    writer.writerows(repos_data)
+if repos_data:
+    with open(csv_file, mode='w', newline='', encoding='utf-8') as file:
+        fieldnames = ["Group Name", "Repo Name", "Repo URL", "Archived", "Last Activity Day", "Last Commit Day", "Last Committer"]
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(repos_data)
 
-print(f"[✓] Data saved to '{csv_file}'")
+    print(f"[✓] Data saved to '{csv_file}'")
+else:
+    print("[!] No inactive repositories found or no access to them.")
