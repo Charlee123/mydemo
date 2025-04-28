@@ -6,7 +6,7 @@ from tqdm import tqdm   # 🚀 NEW: Progress bar
 
 # GitLab configuration
 GITLAB_URL = 'https://gitlab.com'
-ACCESS_TOKEN = 'glpat-wJXweM94RF94Vbd-e9xy'
+ACCESS_TOKEN = 'test'
 
 # Initialize GitLab connection
 gl = gitlab.Gitlab(GITLAB_URL, private_token=ACCESS_TOKEN)
