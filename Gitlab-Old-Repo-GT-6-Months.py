@@ -2,32 +2,33 @@ import gitlab
 import csv
 import os
 from datetime import datetime, timedelta
+from tqdm import tqdm   # 🚀 NEW: Progress bar
 
 # GitLab configuration
 GITLAB_URL = 'https://gitlab.com'
-ACCESS_TOKEN = 'glpat-wJXweM94RF94Vbd-e9xy'  # Secure way to handle tokens
+ACCESS_TOKEN = 'glpat-wJXweM94RF94Vbd-e9xy'
 
 # Initialize GitLab connection
 gl = gitlab.Gitlab(GITLAB_URL, private_token=ACCESS_TOKEN)
 
 # Set time threshold (example: 6 months ago)
-six_months_ago = datetime.now() - timedelta(minutes=1)  # Adjust as needed
+six_months_ago = datetime.now() - timedelta(minutes=1)
 
 # Prepare data for CSV
 repos_data = []
 
 # Loop through all groups
 groups = gl.groups.list(all=True)
-for group in groups:
+for group in tqdm(groups, desc="Processing Groups 🚀", unit="group"):   # 🚀 Progress bar for groups
     try:
         projects = group.projects.list(all=True, include_subgroups=True)
     except gitlab.exceptions.GitlabGetError as e:
         print(f"[Error] Could not retrieve projects for group '{group.name}': {e}")
         continue
 
-    for project in projects:
+    # NEW: Progress bar for projects inside each group
+    for project in tqdm(projects, desc=f"Group: {group.name}", leave=False, unit="repo"):
         try:
-            # Try to fetch project details
             try:
                 project_detail = gl.projects.get(project.id)
             except gitlab.exceptions.GitlabGetError as e:
@@ -38,16 +39,13 @@ for group in groups:
                     print(f"[Error] Failed to fetch project '{project.name}': {e}")
                     continue
 
-            # Now safe to process project
             last_activity_raw = project_detail.last_activity_at
 
-            # Parse last activity timestamp
             try:
                 last_activity = datetime.strptime(last_activity_raw, '%Y-%m-%dT%H:%M:%S.%fZ')
             except ValueError:
                 last_activity = datetime.strptime(last_activity_raw, '%Y-%m-%dT%H:%M:%SZ')
 
-            # Only if repo inactive
             if last_activity < six_months_ago:
                 try:
                     commits = project_detail.commits.list(per_page=1)
