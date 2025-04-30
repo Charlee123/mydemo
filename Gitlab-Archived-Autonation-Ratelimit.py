@@ -2,22 +2,29 @@ import gitlab
 import pandas as pd
 from tqdm import tqdm
 import time
+from urllib.parse import urlparse
 
 # -----------------------------
 # GitLab Connection Setup
 # -----------------------------
-GITLAB_URL = 'https://gitlab.com'
+GITLAB_URL = 'https://gitlab.com'  # Change this if self-hosted
 ACCESS_TOKEN = 'glpat-wJXweM94RF94Vbd-e9xy'  # Replace with your token
 
 gl = gitlab.Gitlab(GITLAB_URL, private_token=ACCESS_TOKEN)
 
 # -----------------------------
-# Read CSV File with Repos
+# Read CSV File with Repo URLs
 # -----------------------------
 input_file = 'inactive_repos.csv'
 df = pd.read_csv(input_file)
 
-repo_list = df['Repo Name'].tolist()
+# Extract project path from URL
+def extract_project_path(repo_url):
+    parsed = urlparse(repo_url)
+    return parsed.path.strip('/')
+
+df['project_path'] = df['Repo URL'].apply(extract_project_path)
+repo_paths = df['project_path'].tolist()
 
 # -----------------------------
 # Archive Repositories
@@ -27,35 +34,32 @@ failed_archives = []
 
 print("\nArchiving Repos 🚀:")
 
-for repo_name in tqdm(repo_list, desc="Archiving Repos 🚀", unit="repo"):
+for repo_path in tqdm(repo_paths, desc="Archiving Repos 🚀", unit="repo"):
     try:
-        # Fetch the project
-        projects = gl.projects.list(search=repo_name, get_all=True)
+        project = gl.projects.get(repo_path)
 
-        if not projects:
-            print(f"⚠️ Repo not found: {repo_name}")
-            failed_archives.append({'repo_name': repo_name, 'reason': 'Not found'})
+        if project.archived:
+            print(f"ℹ️ Already archived: {repo_path}")
+            successful_archives.append({'repo_path': repo_path, 'status': 'Already Archived'})
         else:
-            project = projects[0]
+            project.archive()
+            print(f"✅ Successfully archived: {repo_path}")
+            successful_archives.append({'repo_path': repo_path, 'status': 'Archived'})
 
-            if project.archived:
-                print(f"ℹ️ Already archived: {repo_name}")
-                successful_archives.append({'repo_name': repo_name, 'status': 'Already Archived'})
-            else:
-                project.archive()
-                print(f"✅ Successfully archived: {repo_name}")
-                successful_archives.append({'repo_name': repo_name, 'status': 'Archived'})
+    except gitlab.exceptions.GitlabGetError as e:
+        print(f"⚠️ Repo not found or inaccessible: {repo_path}")
+        failed_archives.append({'repo_path': repo_path, 'reason': str(e)})
 
     except gitlab.exceptions.GitlabAuthenticationError:
         print("🔒 Authentication error. Check your token.")
         break
 
     except Exception as e:
-        print(f"❌ Error archiving '{repo_name}': {str(e)}")
-        failed_archives.append({'repo_name': repo_name, 'reason': str(e)})
+        print(f"❌ Error archiving '{repo_path}': {str(e)}")
+        failed_archives.append({'repo_path': repo_path, 'reason': str(e)})
 
-    # ✅ Delay to avoid rate limits
-    time.sleep(20)
+    # Optional delay for rate limiting
+    time.sleep(5)
 
 # -----------------------------
 # Save Result Files
