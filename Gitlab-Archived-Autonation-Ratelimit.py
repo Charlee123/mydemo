@@ -78,10 +78,14 @@ def archive_repo(repo_name, gl):
         logging.error(f"🔒 Authentication error on repo '{repo_name}'. Check your token.")
         return False
 
-    except gitlab.exceptions.GitlabRateLimitError:
-        logging.warning(f"⚠️ Rate limit hit for token {ACCESS_TOKENS[token_idx]}. Waiting for {RATE_LIMIT_WAIT} seconds...")
-        time.sleep(RATE_LIMIT_WAIT)  # Wait for rate limit reset
-        return archive_repo(repo_name, gl)  # Retry the same repo
+    except gitlab.exceptions.GitlabError as e:
+        if '403' in str(e):  # Rate limit error (403)
+            logging.warning(f"⚠️ Rate limit hit for token {ACCESS_TOKENS[token_idx]}. Waiting for {RATE_LIMIT_WAIT} seconds...")
+            time.sleep(RATE_LIMIT_WAIT)  # Wait for rate limit reset
+            return archive_repo(repo_name, gl)  # Retry the same repo
+        logging.error(f"❌ Error on repo '{repo_name}': {str(e)}")
+        failed_archives.append({'repo_name': repo_name, 'reason': str(e)})
+        return False
 
     except Exception as e:
         logging.error(f"❌ Error on repo '{repo_name}': {str(e)}")
