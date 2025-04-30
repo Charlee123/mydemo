@@ -2,20 +2,20 @@ import gitlab
 import openpyxl
 import pandas as pd
 from tqdm import tqdm
-import time
+import time  # Required for time.sleep
 
 # -----------------------------
 # GitLab Connection Setup
 # -----------------------------
 GITLAB_URL = 'https://gitlab.com'
-ACCESS_TOKEN = 'glpat-wJXweM94RF94Vbd-e9xy'  # Replace with your secure token
+ACCESS_TOKEN = 'glpat-wJXweM94RF94Vbd-e9xy'  # Replace with your actual token
 
 gl = gitlab.Gitlab(GITLAB_URL, private_token=ACCESS_TOKEN)
 
 # -----------------------------
 # Read CSV File with Repos
 # -----------------------------
-input_file = 'inactive_repos.csv'  # Replace with your file path
+input_file = 'inactive_repos.csv'  # Update with your actual file path
 df = pd.read_csv(input_file)
 
 repo_list = df['Repo Name'].tolist()
@@ -29,6 +29,12 @@ failed_archives = []
 print("\nArchiving Repos 🚀:")
 
 for idx, repo_name in enumerate(tqdm(repo_list, desc="Archiving Repos 🚀", unit="repo")):
+    # Wait every 5 requests to respect GitLab rate limit
+    if idx > 0 and idx % 5 == 0:
+        print("\n🔁 Processed 5 repositories.")
+        print("🕒 GitLab rate limit reached (5 req/min). Waiting for 65 seconds...\n")
+        time.sleep(65)  # Ensure waiting for 65 seconds
+
     try:
         projects = gl.projects.list(search=repo_name, get_all=True)
 
@@ -45,7 +51,7 @@ for idx, repo_name in enumerate(tqdm(repo_list, desc="Archiving Repos 🚀", uni
             continue
 
         # Retry logic for 403 rate limit errors
-        for attempt in range(3):  # Retry up to 3 times
+        for attempt in range(3):
             try:
                 project.archive()
                 print(f"✅ Successfully archived: {repo_name}")
@@ -58,11 +64,6 @@ for idx, repo_name in enumerate(tqdm(repo_list, desc="Archiving Repos 🚀", uni
                     time.sleep(wait_time)
                 else:
                     raise
-
-        # Respect GitLab’s 5 requests per minute limit
-        if (idx + 1) % 5 == 0:
-            print("🕒 Reached 5 requests. Waiting 60 seconds for rate limit reset...")
-            time.sleep(60)
 
     except gitlab.exceptions.GitlabAuthenticationError:
         print("🔒 Authentication error. Check your token.")
