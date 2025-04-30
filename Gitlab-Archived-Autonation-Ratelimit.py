@@ -12,109 +12,121 @@ GITLAB_URL = 'https://gitlab.com'
 ACCESS_TOKENS = ['glpat-wJXweM94RF94Vbd-e9xy', 'test']  # Replace with your actual token
 
 REQUESTS_PER_TOKEN = 5  # GitLab rate limit per minute
+RATE_LIMIT_WAIT = 70  # Wait time after a 403 error (70 seconds)
 
-INPUT_FILE = 'inactive_repos.csv'
+# Initialize Logging
+logging.basicConfig(filename='archiving_process.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+logging.info("Archiving process started.")
 
-# -----------------------------
-# Token Management
-# -----------------------------
 def get_gitlab_connection(token):
+    """Return a GitLab connection object for a specific token"""
     try:
-        gl = gitlab.Gitlab(GITLAB_URL, private_token=token)
-        gl.auth()
+        gl = gitlab.Gitlab(GITLAB_URL, private_token=token, ssl_verify=False)
         return gl
     except Exception as e:
-        print(f"❌ Failed to connect with token {token[:10]}... — {str(e)}")
+        logging.error(f"Error connecting with token {token}: {str(e)}")
         return None
 
 # -----------------------------
-# Initialize
+# Read Excel File with Repos
 # -----------------------------
-df = pd.read_csv(INPUT_FILE)
+input_file = 'inactive_repos.csv'  # Replace with your file path
+df = pd.read_csv(input_file)
+
+# Assuming your Excel file has a column named 'repository_name'
 repo_list = df['Repo Name'].tolist()
 
+# -----------------------------
+# Archive Repositories
+# -----------------------------
 successful_archives = []
 failed_archives = []
 
+# Token Index Tracker
 token_idx = 0
-request_count = 0
-gl = get_gitlab_connection(ACCESS_TOKENS[token_idx])
-if gl is None:
-    raise Exception("🛑 Failed to establish initial GitLab connection.")
+requests_made = 0
 
 # -----------------------------
-# Archive Logic
+# Function to Archive Repos with Retry
 # -----------------------------
-print("\n🔧 Archiving Repositories...\n")
-
-i = 0
-while i < len(repo_list):
-    repo_name = repo_list[i]
-    print(f"\n🔍 Processing repo: {repo_name}")
-
+def archive_repo(repo_name, gl):
     try:
-        if request_count >= REQUESTS_PER_TOKEN:
-            token_idx = (token_idx + 1) % len(ACCESS_TOKENS)
-            gl = get_gitlab_connection(ACCESS_TOKENS[token_idx])
-            if gl is None:
-                print("🛑 All tokens failed. Exiting.")
-                break
-            request_count = 0
-            print(f"🔄 Switched to token {token_idx + 1}/{len(ACCESS_TOKENS)}")
-
+        # Fetch the project using search
         projects = gl.projects.list(search=repo_name, get_all=True)
-        request_count += 1
-
+        
+        # If no project found
         if not projects:
-            print(f"⚠️ Repo not found: {repo_name}")
-            failed_archives.append({'repo_name': repo_name, 'reason': 'Not found'})
-            i += 1
-            continue
+            logging.warning(f"⚠️ Repo not found: {repo_name}")
+            failed_archives.append({'repo_name': repo_name, 'reason': 'Repo not found'})
+            return False
 
         project = projects[0]
 
+        # Check if the project is already archived
         if project.archived:
-            print(f"ℹ️ Already archived: {repo_name}")
+            logging.info(f"ℹ️ Already archived: {repo_name}")
             successful_archives.append({'repo_name': repo_name, 'status': 'Already Archived'})
-            i += 1
-            continue
+            return True
 
+        # Archive the project
         project.archive()
-        request_count += 1
-        print(f"✅ Successfully archived: {repo_name}")
+        logging.info(f"✅ Successfully archived: {repo_name}")
         successful_archives.append({'repo_name': repo_name, 'status': 'Archived'})
-        i += 1
+        return True
 
-    except gitlab.exceptions.GitlabHttpError as e:
-        if e.response_code == 403:
-            print(f"⏳ 403 Rate Limit. Waiting 70 seconds before retry...")
-            time.sleep(70)
-            continue  # retry same repo
-        else:
-            print(f"❌ GitLab HTTP error on '{repo_name}': {str(e)}")
-            failed_archives.append({'repo_name': repo_name, 'reason': str(e)})
-            i += 1
+    except gitlab.exceptions.GitlabAuthenticationError:
+        logging.error(f"🔒 Authentication error on repo '{repo_name}'. Check your token.")
+        return False
+
+    except gitlab.exceptions.GitlabRateLimitError:
+        logging.warning(f"⚠️ Rate limit hit for token {ACCESS_TOKENS[token_idx]}. Waiting for {RATE_LIMIT_WAIT} seconds...")
+        time.sleep(RATE_LIMIT_WAIT)  # Wait for rate limit reset
+        return archive_repo(repo_name, gl)  # Retry the same repo
+
     except Exception as e:
-        print(f"❌ Unexpected error on '{repo_name}': {str(e)}")
+        logging.error(f"❌ Error on repo '{repo_name}': {str(e)}")
         failed_archives.append({'repo_name': repo_name, 'reason': str(e)})
-        i += 1
+        return False
 
 # -----------------------------
-# Save Results
+# Main Loop to Archive Repositories
+# -----------------------------
+logging.info("🔧 Archiving Repositories...")
+
+for repo_name in tqdm(repo_list, desc="Archiving Repos 🚀", unit="repo"):
+    gl = get_gitlab_connection(ACCESS_TOKENS[token_idx])
+    
+    if not gl:
+        logging.error("Error with GitLab connection. Skipping repo.")
+        continue
+
+    success = archive_repo(repo_name, gl)
+
+    if success:
+        requests_made += 1
+    
+    # After every 5 requests, rotate the token
+    if requests_made >= REQUESTS_PER_TOKEN:
+        token_idx = (token_idx + 1) % len(ACCESS_TOKENS)
+        gl = get_gitlab_connection(ACCESS_TOKENS[token_idx])
+        requests_made = 0
+
+# -----------------------------
+# Save Result Files
 # -----------------------------
 if failed_archives:
-    failed_file = 'failed_to_archive_repos.csv'
-    pd.DataFrame(failed_archives).to_csv(failed_file, index=False)
-    print(f"\n❌ Failed repos saved to: {failed_file}")
+    pd.DataFrame(failed_archives).to_csv('failed_to_archive_repos.csv', index=False)
+    logging.info(f"❌ Failed to archive some repos. Results saved in 'failed_to_archive_repos.csv'.")
 
 if successful_archives:
-    success_file = 'successful_archived_repos.csv'
-    pd.DataFrame(successful_archives).to_csv(success_file, index=False)
-    print(f"\n✅ Successfully archived repos saved to: {success_file}")
+    pd.DataFrame(successful_archives).to_csv('successful_archived_repos.csv', index=False)
+    logging.info(f"✅ Successfully archived repos. Results saved in 'successful_archived_repos.csv'.")
 
 # -----------------------------
 # Summary
 # -----------------------------
-print("\n📊 Archiving Summary:")
-print(f"✅ Successful: {len(successful_archives)}")
-print(f"❌ Failed: {len(failed_archives)}")
+logging.info("\n🎯 Archiving Summary:")
+logging.info(f"✅ Successfully Archived: {len(successful_archives)}")
+logging.info(f"❌ Failed to Archive: {len(failed_archives)}")
+logging.info(f"📄 Failed repos saved to 'failed_to_archive_repos.csv'")
+logging.info(f"📄 Successful repos saved to 'successful_archived_repos.csv'")
