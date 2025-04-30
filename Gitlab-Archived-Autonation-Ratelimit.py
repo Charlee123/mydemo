@@ -3,22 +3,20 @@ import openpyxl
 import pandas as pd
 from tqdm import tqdm
 import time
-import requests  # Import requests to manually check rate limit
 
 # -----------------------------
 # GitLab Connection Setup
 # -----------------------------
 GITLAB_URL = 'https://gitlab.com'
-ACCESS_TOKEN = 'glpat-wJXweM94RF94Vbd-e9xy'  # Replace with your actual token
-
-gl = gitlab.Gitlab(GITLAB_URL, private_token=ACCESS_TOKEN)
+ACCESS_TOKENS = ['glpat-wJXweM94RF94Vbd-e9xy', 'glpat-xxxxxx', 'glpat-yyyyyy']  # List of Personal Access Tokens (not username/password)
 
 # -----------------------------
-# Read CSV File with Repos
+# Read Excel File with Repos
 # -----------------------------
-input_file = 'inactive_repos.csv'  # Update with your actual file path
+input_file = 'inactive_repos.csv'  # Replace with your file path
 df = pd.read_csv(input_file)
 
+# Assuming your Excel file has a column named 'repository_name'
 repo_list = df['Repo Name'].tolist()
 
 # -----------------------------
@@ -27,78 +25,68 @@ repo_list = df['Repo Name'].tolist()
 successful_archives = []
 failed_archives = []
 
+# Function to switch to the next token if rate limit is hit
+def get_gitlab_connection(token):
+    return gitlab.Gitlab(GITLAB_URL, private_token=token)
+
+# -----------------------------
+# Archive Repos with Rate Limit Handling
+# -----------------------------
 print("\nArchiving Repos 🚀:")
 
-def check_rate_limit():
-    # Perform a simple request to GitLab API to get rate limit headers
-    url = f"{GITLAB_URL}/api/v4/users"  # You can use any simple endpoint to check rate limit
-    headers = {
-        'PRIVATE-TOKEN': ACCESS_TOKEN,
-    }
-    response = requests.get(url, headers=headers)
-    
-    remaining = response.headers.get('X-RateLimit-Remaining')
-    reset_timestamp = response.headers.get('X-RateLimit-Reset')
+# Token Index for rotating through tokens
+token_idx = 0
 
-    if remaining is not None and reset_timestamp is not None:
-        return int(remaining), int(reset_timestamp)
-    else:
-        return 0, 0  # Default to 0 if headers are not present or rate limit info is not available
+for repo_name in tqdm(repo_list, desc="Archiving Repos 🚀", unit="repo"):
+    retries = 0  # To track retries on 403 errors
 
-for idx, repo_name in enumerate(tqdm(repo_list, desc="Archiving Repos 🚀", unit="repo")):
-    retry_count = 0
-    while retry_count < 3:  # Retry a repository up to 3 times if 403 occurs
-        # Check rate limit
-        remaining, reset_timestamp = check_rate_limit()
-
-        # If remaining requests are 0, calculate sleep time based on reset timestamp
-        if remaining == 0:
-            reset_time = reset_timestamp - int(time.time())  # Time left for reset
-            if reset_time > 0:
-                print(f"\n🕒 Rate limit reached. Waiting for {reset_time} seconds for reset...\n")
-                time.sleep(reset_time)
-
+    while retries < 5:  # Retry limit, can be adjusted
         try:
-            print(f"\n🔍 Processing repo: {repo_name} (Attempt {retry_count + 1}/3)...")
+            gl = get_gitlab_connection(ACCESS_TOKENS[token_idx])
+
+            # Fetch the project using search
             projects = gl.projects.list(search=repo_name, get_all=True)
 
+            # If no project found
             if not projects:
                 print(f"⚠️ Repo not found: {repo_name}")
                 failed_archives.append({'repo_name': repo_name, 'reason': 'Not found'})
                 break
 
+            # Assuming first match (you can improve matching logic)
             project = projects[0]
 
+            # Check if the project is already archived
             if project.archived:
-                print(f"ℹ️ Repo '{repo_name}' is already archived.")
+                print(f"ℹ️ Already archived: {repo_name}")
                 successful_archives.append({'repo_name': repo_name, 'status': 'Already Archived'})
                 break
 
-            print(f"📦 Archiving repo: {repo_name}...")
+            # Archive the project
             project.archive()
             print(f"✅ Successfully archived: {repo_name}")
             successful_archives.append({'repo_name': repo_name, 'status': 'Archived'})
-            break  # Break out of the retry loop if successful
+            break
 
-        except gitlab.exceptions.GitlabHttpError as e:
-            if e.response_code == 403:
-                print(f"❌ Rate limit hit for '{repo_name}'. Skipping and waiting for rate limit reset.")
-                remaining, reset_timestamp = check_rate_limit()
-                if remaining == 0:
-                    reset_time = reset_timestamp - int(time.time())
-                    print(f"⏳ Waiting for {reset_time} seconds before retrying...")
-                    time.sleep(reset_time)
-                retry_count += 1
-                if retry_count >= 3:
-                    print(f"⚠️ Maximum retries reached for '{repo_name}'. Skipping for now.")
-                    failed_archives.append({'repo_name': repo_name, 'reason': 'Rate limit hit (403) - Max retries'})
-                else:
-                    print(f"🔄 Retrying ({retry_count}/3) for '{repo_name}'...")
+        except gitlab.exceptions.GitlabAuthenticationError:
+            print(f"🔒 Authentication error. Check your token.")
+            break
 
-            else:
-                print(f"❌ Error archiving '{repo_name}': {str(e)}")
-                failed_archives.append({'repo_name': repo_name, 'reason': str(e)})
-                break  # Exit the retry loop after a different error
+        except gitlab.exceptions.GitlabForbiddenError:
+            print(f"❌ 403 Forbidden. Waiting 70 seconds before retrying for '{repo_name}'...")
+            retries += 1
+            time.sleep(70)  # Wait for 70 seconds before retrying
+
+            # Switch to the next token if 5 retries have been reached for the current token
+            if retries == 5:
+                print(f"🔄 Switching to next token...")
+                token_idx = (token_idx + 1) % len(ACCESS_TOKENS)
+                retries = 0  # Reset retry count after switching tokens
+
+        except Exception as e:
+            print(f"❌ Error archiving '{repo_name}': {str(e)}")
+            failed_archives.append({'repo_name': repo_name, 'reason': str(e)})
+            break
 
 # -----------------------------
 # Save Result Files
@@ -115,6 +103,6 @@ print("\n🎯 Archiving Summary:")
 print(f"✅ Successful: {len(successful_archives)}")
 print(f"❌ Failed: {len(failed_archives)}")
 if failed_archives:
-    print("📄 Failed repos saved to 'failed_to_archive_repos.csv'")
+    print(f"📄 Failed repos saved to 'failed_to_archive_repos.csv'")
 if successful_archives:
-    print("📄 Successful repos saved to 'successful_archived_repos.csv'")
+    print(f"📄 Successful repos saved to 'successful_archived_repos.csv'")
