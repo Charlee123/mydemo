@@ -2,7 +2,8 @@ import gitlab
 import openpyxl
 import pandas as pd
 from tqdm import tqdm
-import time  # Required for time.sleep
+import time
+import requests  # Import requests to manually check rate limit
 
 # -----------------------------
 # GitLab Connection Setup
@@ -29,11 +30,20 @@ failed_archives = []
 print("\nArchiving Repos 🚀:")
 
 def check_rate_limit():
-    # Get rate limit status from the GitLab API headers
-    rate_limit = gl.get('/application/settings')
-    remaining = rate_limit['rate_limit_remaining']  # Remaining requests
-    reset = rate_limit['rate_limit_reset']  # When the limit resets (timestamp)
-    return remaining, reset
+    # Perform a simple request to GitLab API to get rate limit headers
+    url = f"{GITLAB_URL}/api/v4/users"  # You can use any simple endpoint to check rate limit
+    headers = {
+        'PRIVATE-TOKEN': ACCESS_TOKEN,
+    }
+    response = requests.get(url, headers=headers)
+    
+    remaining = response.headers.get('X-RateLimit-Remaining')
+    reset_timestamp = response.headers.get('X-RateLimit-Reset')
+
+    if remaining is not None and reset_timestamp is not None:
+        return int(remaining), int(reset_timestamp)
+    else:
+        return 0, 0  # Default to 0 if headers are not present or rate limit info is not available
 
 for idx, repo_name in enumerate(tqdm(repo_list, desc="Archiving Repos 🚀", unit="repo")):
     retry_count = 0
