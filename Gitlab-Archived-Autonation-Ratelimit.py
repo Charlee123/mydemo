@@ -13,6 +13,7 @@ ACCESS_TOKENS = ['glpat-wJXweM94RF94Vbd-e9xy', 'test']  # Replace with your actu
 
 REQUESTS_PER_TOKEN = 5  # GitLab rate limit per minute
 RATE_LIMIT_WAIT = 70  # Wait time after a 403 error (70 seconds)
+MAX_RETRIES = 3  # Maximum retries for a repo
 
 # Initialize Logging
 logging.basicConfig(filename='archiving_process.log', level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -49,7 +50,7 @@ requests_made = 0
 # -----------------------------
 # Function to Archive Repos with Retry
 # -----------------------------
-def archive_repo(repo_name, gl):
+def archive_repo(repo_name, gl, retries=0):
     try:
         # Fetch the project using search
         projects = gl.projects.list(search=repo_name, get_all=True)
@@ -79,10 +80,11 @@ def archive_repo(repo_name, gl):
         return False
 
     except gitlab.exceptions.GitlabError as e:
-        if '403' in str(e):  # Rate limit error (403)
-            logging.warning(f"⚠️ Rate limit hit for token {ACCESS_TOKENS[token_idx]}. Waiting for {RATE_LIMIT_WAIT} seconds...")
-            time.sleep(RATE_LIMIT_WAIT)  # Wait for rate limit reset
-            return archive_repo(repo_name, gl)  # Retry the same repo
+        if '403' in str(e) and retries < MAX_RETRIES:  # Rate limit error (403)
+            wait_time = RATE_LIMIT_WAIT * (2 ** retries)  # Exponential backoff
+            logging.warning(f"⚠️ Rate limit hit for token {ACCESS_TOKENS[token_idx]}. Waiting for {wait_time} seconds...")
+            time.sleep(wait_time)  # Wait before retrying
+            return archive_repo(repo_name, gl, retries + 1)  # Retry with exponential backoff
         logging.error(f"❌ Error on repo '{repo_name}': {str(e)}")
         failed_archives.append({'repo_name': repo_name, 'reason': str(e)})
         return False
