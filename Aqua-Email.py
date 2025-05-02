@@ -66,8 +66,8 @@ def get_all_jobs(jobs=None, prefix='', folder_depth=2):
 
         if job_class == 'com.cloudbees.hudson.plugins.folder.Folder':
             subfolder_path = f"{prefix}{name}/"
-            # Fix: Ensure folder_depth is passed as an integer
-            sub_jobs = server.get_jobs(subfolder_path)
+            # Fix: Explicitly pass folder_depth as an integer
+            sub_jobs = server.get_jobs(subfolder_path, folder_depth=int(folder_depth))  # Explicitly convert to integer
             all_jobs.extend(get_all_jobs(sub_jobs, subfolder_path, folder_depth))  # Pass folder_depth explicitly
         else:
             job_path = f"{prefix}{name}"
