@@ -6,16 +6,22 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import os
+import warnings
+import requests
+
+# Disable SSL and insecure request warnings
+requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+warnings.filterwarnings("ignore", category=InsecureRequestWarning)
 
 # Jenkins config
-JENKINS_URL = 'http://localhost:8080/'
+JENKINS_URL = 'https://your-jenkins-url.com/'  # Use the HTTPS URL here
 USERNAME = 'devsecops'
 API_TOKEN = '11eca10940c16f371ded6738424553213f'
 
 # Gmail SMTP config
 SENDER_EMAIL = 'sharear.appsec@gmail.com'  # Replace with your Gmail email
 APP_PASSWORD = 'bgse sbdh yvgl nfbv'  # Replace with your generated App Password
-RECIPIENT_EMAIL = 'shrear.ahmed@iff.com'  # Replace with recipient email
+RECIPIENT_EMAIL = 'joseph.vinikoor@iff.com'  # Replace with recipient email
 SMTP_SERVER = 'smtp.gmail.com'  # SMTP server for Gmail
 SMTP_PORT = 587  # SMTP port for TLS
 
@@ -41,7 +47,7 @@ DevSecOps Team
 ATTACHMENT_FILE = "jenkins_missing_aqua_stages.csv"
 
 # Connect to Jenkins
-server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=API_TOKEN)
+server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=API_TOKEN, ssl_verify=False)
 
 # Recursively get all jobs (including nested folders)
 def get_all_jobs(jobs=None, prefix=''):
