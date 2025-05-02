@@ -1,9 +1,9 @@
 Fetching jobs from Jenkins...
 🔍 Total jobs fetched: 3
 Checking job: application
-⚠️ Error checking job application: 'builds'
+⚠️ No builds found for job: application
 Checking job: infrastructure
-⚠️ Error checking job infrastructure: 'builds'
+⚠️ No builds found for job: infrastructure
 Checking job: salesforce-org
-⚠️ Error checking job salesforce-org: 'builds'
+⚠️ No builds found for job: salesforce-org
 No jobs found missing Aqua stage!
