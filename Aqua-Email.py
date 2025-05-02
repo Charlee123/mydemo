@@ -54,19 +54,20 @@ server._session = session  # Assign this session to the Jenkins server instance
 
 # Recursively get all jobs (including nested folders)
 def get_all_jobs():
-    jobs = server.get_jobs()
+    jobs = server.get_jobs()  # Fetch all jobs
     all_jobs = []
 
     for job in jobs:
         job_name = job['name']
         job_class = job['_class']
         
+        # Check if the job is a folder, and fetch its jobs if so
         if job_class == 'com.cloudbees.hudson.plugins.folder.Folder':
             subfolder_path = job_name
+            print(f"⚠️ Processing folder: {subfolder_path}")  # Debugging folder processing
             try:
-                # Remove folder_depth parameter for simplicity
-                sub_jobs = server.get_jobs(subfolder_path)
-                all_jobs.extend(get_all_jobs_from_folder(sub_jobs))
+                sub_jobs = server.get_jobs(subfolder_path)  # Fetch jobs within folder
+                all_jobs.extend(get_all_jobs_from_folder(sub_jobs))  # Recursively handle subfolder jobs
             except Exception as e:
                 print(f"⚠️ Error fetching subfolder jobs for {job_name}: {e}")
         else:
@@ -80,8 +81,10 @@ def get_all_jobs_from_folder(jobs):
         job_name = job['name']
         job_class = job['_class']
         
+        # Handle subfolders inside folders
         if job_class == 'com.cloudbees.hudson.plugins.folder.Folder':
             subfolder_path = f"{job_name}/"
+            print(f"⚠️ Processing subfolder: {subfolder_path}")  # Debugging folder processing
             try:
                 sub_jobs = server.get_jobs(subfolder_path)
                 all_jobs.extend(get_all_jobs_from_folder(sub_jobs))
