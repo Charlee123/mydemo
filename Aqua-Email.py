@@ -7,15 +7,15 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import os
 import requests
-from requests.packages.urllib3.exceptions import InsecureRequestWarning
+from requests.packages.urllib3.exceptions import InsecureRequestWarning # type: ignore
 
 # Suppress the InsecureRequestWarning when using requests without SSL verification
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning) # type: ignore
 
 # Jenkins config
-JENKINS_URL = 'https://localhost:8080/'  # Make sure you're using https
-USERNAME = 'devsecops'
-API_TOKEN = '11eca10940c16f371ded6738424553213f'
+JENKINS_URL = 'https://jenkins-ca-prod.global.iff.com/'
+USERNAME = 'test@gmail.com'
+PASSWORD = 'test'
 
 # Gmail SMTP config
 SENDER_EMAIL = 'sharear.appsec@gmail.com'  # Replace with your Gmail email
@@ -46,7 +46,7 @@ DevSecOps Team
 ATTACHMENT_FILE = "jenkins_missing_aqua_stages.csv"
 
 # Connect to Jenkins with SSL verification disabled (using verify=False)
-server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=API_TOKEN)
+server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=PASSWORD)
 
 # Disable SSL verification globally for requests made by the Jenkins client
 session = requests.Session()
