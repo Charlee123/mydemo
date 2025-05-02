@@ -6,9 +6,12 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import os
+import ssl
+from requests.adapters import HTTPAdapter
+import requests
 
 # Jenkins config
-JENKINS_URL = 'http://localhost:8080/'
+JENKINS_URL = 'https://localhost:8080/'  # Make sure you're using https
 USERNAME = 'devsecops'
 API_TOKEN = '11eca10940c16f371ded6738424553213f'
 
@@ -40,8 +43,22 @@ DevSecOps Team
 # Output CSV
 ATTACHMENT_FILE = "jenkins_missing_aqua_stages.csv"
 
-# Connect to Jenkins
+# Disable SSL verification
+class SSLAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        kwargs['context'] = context
+        return super(SSLAdapter, self).init_poolmanager(*args, **kwargs)
+
+# Connect to Jenkins with SSL verification disabled
 server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=API_TOKEN)
+
+# Apply the SSLAdapter to skip verification
+session = requests.Session()
+session.mount('https://', SSLAdapter())
+server._session = session  # This will attach our session to the Jenkins instance
 
 # Recursively get all jobs (including nested folders)
 def get_all_jobs(jobs=None, prefix=''):
