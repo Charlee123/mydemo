@@ -74,12 +74,12 @@ urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='jenkins-ca-prod.glob
 During handling of the above exception, another exception occurred:
 
 Traceback (most recent call last):
-  File "c:\Users\1304617\OneDrive - International Flavors & Fragrances Inc\Desktop\Scripts\Aqua-Email.py", line 177, in <module>
+  File "c:\Users\1304617\OneDrive - International Flavors & Fragrances Inc\Desktop\Scripts\Aqua-Email.py", line 167, in <module>
     main()
     ~~~~^^
-  File "c:\Users\1304617\OneDrive - International Flavors & Fragrances Inc\Desktop\Scripts\Aqua-Email.py", line 129, in main
+  File "c:\Users\1304617\OneDrive - International Flavors & Fragrances Inc\Desktop\Scripts\Aqua-Email.py", line 120, in main
     all_jobs = get_all_jobs()
-  File "c:\Users\1304617\OneDrive - International Flavors & Fragrances Inc\Desktop\Scripts\Aqua-Email.py", line 53, in get_all_jobs
+  File "c:\Users\1304617\OneDrive - International Flavors & Fragrances Inc\Desktop\Scripts\Aqua-Email.py", line 72, in get_all_jobs
     jobs = server.get_jobs()
   File "C:\Users\1304617\AppData\Local\Programs\Python\Python313\Lib\site-packages\jenkins\__init__.py", line 1064, in get_jobs
     return self.get_all_jobs(folder_depth=folder_depth,
