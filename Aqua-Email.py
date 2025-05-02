@@ -54,45 +54,20 @@ server._session = session  # Assign this session to the Jenkins server instance
 
 # Recursively get all jobs (including nested folders)
 def get_all_jobs():
-    jobs = server.get_jobs()  # Fetch all jobs
+    jobs = server.get_jobs()  # Fetch all jobs at the root level
     all_jobs = []
 
     for job in jobs:
         job_name = job['name']
         job_class = job['_class']
         
-        # Check if the job is a folder, and fetch its jobs if so
+        # If job is a folder, we skip it and handle folder jobs separately
         if job_class == 'com.cloudbees.hudson.plugins.folder.Folder':
             subfolder_path = job_name
-            print(f"⚠️ Processing folder: {subfolder_path}")  # Debugging folder processing
-            try:
-                sub_jobs = server.get_jobs(subfolder_path)  # Fetch jobs within folder
-                all_jobs.extend(get_all_jobs_from_folder(sub_jobs))  # Recursively handle subfolder jobs
-            except Exception as e:
-                print(f"⚠️ Error fetching subfolder jobs for {job_name}: {e}")
+            print(f"⚠️ Skipping folder: {subfolder_path}")  # Debugging folder processing
         else:
             all_jobs.append({"name": job_name, "_class": job_class})
 
-    return all_jobs
-
-def get_all_jobs_from_folder(jobs):
-    all_jobs = []
-    for job in jobs:
-        job_name = job['name']
-        job_class = job['_class']
-        
-        # Handle subfolders inside folders
-        if job_class == 'com.cloudbees.hudson.plugins.folder.Folder':
-            subfolder_path = f"{job_name}/"
-            print(f"⚠️ Processing subfolder: {subfolder_path}")  # Debugging folder processing
-            try:
-                sub_jobs = server.get_jobs(subfolder_path)
-                all_jobs.extend(get_all_jobs_from_folder(sub_jobs))
-            except Exception as e:
-                print(f"⚠️ Error fetching subfolder jobs for {job_name}: {e}")
-        else:
-            all_jobs.append({"name": job_name, "_class": job_class})
-    
     return all_jobs
 
 # Send email with the CSV attachment
@@ -141,8 +116,8 @@ def main():
         print(f"Checking job: {job_name}")
 
         try:
+            # Handle multibranch pipeline jobs separately
             if 'workflow.multibranch' in job_class:
-                # Handle multibranch job
                 branches = server.get_job_info(job_name)['jobs']
                 for branch in branches:
                     branch_name = branch['name']
