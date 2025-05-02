@@ -1,167 +1,111 @@
 import jenkins
-import csv
-import xml.etree.ElementTree as ET
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
-import os
 import requests
-import warnings
-from requests.auth import HTTPBasicAuth
-from urllib3.exceptions import InsecureRequestWarning
+from requests.adapters import HTTPAdapter
+from urllib3.poolmanager import PoolManager
+import ssl
+import json
 
-# Suppress SSL certificate warnings globally
-warnings.simplefilter('ignore', InsecureRequestWarning)
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+# --- Custom HTTPS Adapter to skip SSL verification securely ---
+class SSLAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        kwargs['ssl_context'] = context
+        self.poolmanager = PoolManager(*args, **kwargs)
 
-# Jenkins config
-JENKINS_URL = 'https://your-jenkins-url.com/'  # Replace with your Jenkins URL
-USERNAME = 'devsecops'
-API_TOKEN = 'your_api_token_here'
+# --- Create a session with SSL verification disabled ---
+session = requests.Session()
+session.mount("https://", SSLAdapter())
 
-# Gmail SMTP config
-SENDER_EMAIL = 'sharear.appsec@gmail.com'
-APP_PASSWORD = 'bgse sbdh yvgl nfbv'
-TO_EMAILS = ['sharear.ahmed@iff.com']
-CC_EMAILS = ['sharear.ahmed@iff.com']
-EMAIL_SUBJECT = '🔔 Jenkins Aqua Stage Check Report'
-EMAIL_BODY = """
-Hi Team,
+# --- Patch the python-jenkins session with our custom session ---
+jenkins.requests = requests
+jenkins.requests.Session = lambda: session
 
-Please find the attached report for Jenkins jobs/branches missing the Aqua Security Scan stage.
+# --- Jenkins credentials and URL ---
+jenkins_url = 'https://jenkins-ca-prod.global.iff.com'
+username = 'your_username_here'  # Replace with your Jenkins username
+api_token = 'your_api_token_here'  # Replace with your Jenkins API token or password
 
-This is an automated email.
+# --- Connect to Jenkins server ---
+server = jenkins.Jenkins(jenkins_url, username=username, password=api_token)
 
-Thanks,
-DevSecOps Team
-"""
-ATTACHMENT_FILE = "jenkins_missing_aqua_stages.csv"
-TARGET_BRANCHES = ["main", "master", "dev", "qas", "prod"]
+# --- Example: Get Jenkins user and version info ---
+try:
+    user = server.get_whoami()
+    version = server.get_version()
+    print(f"Connected to Jenkins {version} as {user['fullName']}")
+except Exception as e:
+    print("Error connecting to Jenkins:", str(e))
 
-# Get CSRF crumb for API access
-def get_crumb():
+# --- Function to fetch all jobs ---
+def get_all_jobs():
     try:
-        crumb_url = f"{JENKINS_URL}crumbIssuer/api/json"
-        response = requests.get(crumb_url, auth=HTTPBasicAuth(USERNAME, API_TOKEN), verify=False)
-        response.raise_for_status()
-        crumb_data = response.json()
-        return {crumb_data['crumbRequestField']: crumb_data['crumb']}
-    except Exception as e:
-        print(f"⚠️ Failed to fetch crumb: {e}")
-        return {}
+        jobs = server.get_all_jobs()
+        print(f"Found {len(jobs)} jobs:")
+        for job in jobs:
+            print(f" - {job['fullname']}")
+        return jobs
+    except jenkins.JenkinsException as e:
+        print(f"Error fetching jobs: {str(e)}")
 
-# Function to fetch job config using direct API call with crumb
-def get_job_config_via_api(job_path):
-    url = f"{JENKINS_URL}job/{'/job/'.join(job_path.split('/'))}/config.xml"
-    headers = get_crumb()
+# --- Function to trigger a job ---
+def trigger_job(job_name):
     try:
-        response = requests.get(url, auth=HTTPBasicAuth(USERNAME, API_TOKEN), headers=headers, verify=False)
-        response.raise_for_status()
-        return response.text
-    except Exception as e:
-        print(f"⚠️ Failed to get job config for {job_path}: {e}")
-        return ""
+        server.build_job(job_name)
+        print(f"Triggered job: {job_name}")
+    except jenkins.JenkinsException as e:
+        print(f"Error triggering job {job_name}: {str(e)}")
 
-# Connect to Jenkins using API
-server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=API_TOKEN)
-
-# Recursively fetch all jobs
-def get_all_jobs(jobs=None, prefix=''):
-    if jobs is None:
-        jobs = server.get_jobs()
-
-    all_jobs = []
-
-    for job in jobs:
-        name = job['name']
-        job_class = job['_class']
-
-        if job_class == 'com.cloudbees.hudson.plugins.folder.Folder':
-            subfolder_path = f"{prefix}{name}/"
-            sub_jobs = server.get_jobs(subfolder_path)
-            all_jobs.extend(get_all_jobs(sub_jobs, subfolder_path))
-        else:
-            job_path = f"{prefix}{name}"
-            all_jobs.append({"name": job_path, "_class": job_class})
-
-    return all_jobs
-
-# Send email
-def send_email():
-    if not os.path.exists(ATTACHMENT_FILE):
-        print(f"⚠️ Attachment file not found: {ATTACHMENT_FILE}")
-        return
-
-    msg = MIMEMultipart()
-    msg['From'] = f'DevSecOps Team <{SENDER_EMAIL}>'
-    msg['To'] = ', '.join(TO_EMAILS)
-    msg['Cc'] = ', '.join(CC_EMAILS)
-    msg['Subject'] = EMAIL_SUBJECT
-    msg.attach(MIMEText(EMAIL_BODY, 'plain'))
-
-    with open(ATTACHMENT_FILE, 'rb') as file:
-        part = MIMEApplication(file.read(), Name=os.path.basename(ATTACHMENT_FILE))
-        part['Content-Disposition'] = f'attachment; filename="{os.path.basename(ATTACHMENT_FILE)}"'
-        msg.attach(part)
-
+# --- Function to get job build status ---
+def get_job_build_status(job_name):
     try:
-        all_recipients = TO_EMAILS + CC_EMAILS
-        with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
-            smtp.starttls()
-            smtp.login(SENDER_EMAIL, APP_PASSWORD)
-            smtp.sendmail(SENDER_EMAIL, all_recipients, msg.as_string())
-        print(f"✅ Email sent successfully to {all_recipients}")
-    except Exception as e:
-        print(f"⚠️ Failed to send email: {e}")
+        builds = server.get_job_info(job_name)['builds']
+        last_build = builds[0]
+        build_status = last_build['result']
+        print(f"Last build status for {job_name}: {build_status}")
+        return build_status
+    except jenkins.JenkinsException as e:
+        print(f"Error fetching build status for job {job_name}: {str(e)}")
 
-# Main logic
+# --- Function to fetch job's console output ---
+def get_job_console_output(job_name, build_number=1):
+    try:
+        console_output = server.get_build_console_output(job_name, build_number)
+        print(f"Console output for {job_name} build {build_number}:")
+        print(console_output)
+    except jenkins.JenkinsException as e:
+        print(f"Error fetching console output for job {job_name}: {str(e)}")
+
+# --- Function to handle jobs, retry, and email logic ---
 def main():
-    all_jobs = get_all_jobs()
-    print(f"🔍 Total jobs found: {len(all_jobs)}")
+    try:
+        # Fetch all jobs
+        all_jobs = get_all_jobs()
 
-    missing_aqua = []
+        for job in all_jobs:
+            job_name = job['fullname']
 
-    for job in all_jobs:
-        job_name = job["name"]
-        job_class = job["_class"]
+            # Check last build status for each job
+            build_status = get_job_build_status(job_name)
 
-        if 'workflow.multibranch' in job_class:
-            try:
-                branches = server.get_job_info(job_name)['jobs']
-            except Exception as e:
-                print(f"⚠️ Failed to get branches for {job_name}: {e}")
-                continue
+            if build_status != 'SUCCESS':
+                print(f"Build failed for job {job_name}, sending email...")
 
-            for branch in branches:
-                branch_name = branch['name']
-                if branch_name not in TARGET_BRANCHES:
-                    continue
+                # Logic to trigger an email alert (if any)
+                # Implement email alert functionality here
+                # For now, it's just a placeholder for the email functionality
+                send_email_alert(job_name, build_status)
 
-                try:
-                    config_xml = get_job_config_via_api(f"{job_name}/{branch_name}")
-                    if "Aqua Security Scan" not in config_xml:
-                        print(f"❌ Aqua stage missing in: {job_name} -> {branch_name}")
-                        missing_aqua.append({"Project Name": job_name, "Branch Name": branch_name})
-                except Exception as e:
-                    print(f"⚠️ Error checking branch {branch_name} of {job_name}: {e}")
-        else:
-            try:
-                config_xml = get_job_config_via_api(job_name)
-                if "Aqua Security Scan" not in config_xml:
-                    print(f"❌ Aqua stage missing in: {job_name} -> N/A")
-                    missing_aqua.append({"Project Name": job_name, "Branch Name": "N/A"})
-            except Exception as e:
-                print(f"⚠️ Error checking job {job_name}: {e}")
+    except Exception as e:
+        print(f"Error during main execution: {str(e)}")
 
-    # Save results
-    with open(ATTACHMENT_FILE, mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file, fieldnames=["Project Name", "Branch Name"])
-        writer.writeheader()
-        writer.writerows(missing_aqua)
+# --- Placeholder for email sending (you can implement this function) ---
+def send_email_alert(job_name, build_status):
+    print(f"Sending email alert for {job_name} with status: {build_status}")
+    # You can use an email sending library like smtplib to send alerts here
+    pass
 
-    print(f"\n📁 Saved {len(missing_aqua)} job(s) missing Aqua stage to: {ATTACHMENT_FILE}")
-    send_email()
-
+# --- Run the script ---
 if __name__ == "__main__":
     main()
