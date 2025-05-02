@@ -53,28 +53,43 @@ session.verify = False  # This disables SSL certificate verification for all req
 server._session = session  # Assign this session to the Jenkins server instance
 
 # Recursively get all jobs (including nested folders)
-def get_all_jobs(jobs=None, prefix=''):
-    if jobs is None:
-        jobs = server.get_jobs()
-
+def get_all_jobs():
+    jobs = server.get_jobs()
     all_jobs = []
 
     for job in jobs:
-        name = job['name']
+        job_name = job['name']
         job_class = job['_class']
-
+        
         if job_class == 'com.cloudbees.hudson.plugins.folder.Folder':
-            subfolder_path = f"{prefix}{name}/"
+            subfolder_path = job_name
             try:
-                # Removed folder_depth parameter for simplicity, just to debug
+                # Remove folder_depth parameter for simplicity
                 sub_jobs = server.get_jobs(subfolder_path)
-                all_jobs.extend(get_all_jobs(sub_jobs, subfolder_path))
+                all_jobs.extend(get_all_jobs_from_folder(sub_jobs))
             except Exception as e:
-                print(f"⚠️ Error fetching subfolder jobs for {name}: {e}")
+                print(f"⚠️ Error fetching subfolder jobs for {job_name}: {e}")
         else:
-            job_path = f"{prefix}{name}"
-            all_jobs.append({"name": job_path, "_class": job_class})
+            all_jobs.append({"name": job_name, "_class": job_class})
 
+    return all_jobs
+
+def get_all_jobs_from_folder(jobs):
+    all_jobs = []
+    for job in jobs:
+        job_name = job['name']
+        job_class = job['_class']
+        
+        if job_class == 'com.cloudbees.hudson.plugins.folder.Folder':
+            subfolder_path = f"{job_name}/"
+            try:
+                sub_jobs = server.get_jobs(subfolder_path)
+                all_jobs.extend(get_all_jobs_from_folder(sub_jobs))
+            except Exception as e:
+                print(f"⚠️ Error fetching subfolder jobs for {job_name}: {e}")
+        else:
+            all_jobs.append({"name": job_name, "_class": job_class})
+    
     return all_jobs
 
 # Send email with the CSV attachment
