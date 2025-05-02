@@ -1,21 +1,44 @@
 import pandas as pd
 import requests
-import sys
 import csv
+import sys
 import logging
 import warnings
 from tqdm import tqdm
-from urllib.parse import quote_plus
+from time import sleep
 from requests.packages.urllib3.exceptions import InsecureRequestWarning  # type: ignore
+from urllib.parse import quote_plus
 
-# Suppress SSL warnings
+# Disable SSL warnings
 warnings.simplefilter('ignore', InsecureRequestWarning)
 
 # -----------------------------
-# Aqua API Configuration
+# Configuration
 # -----------------------------
 AQUA_API_INFO = 'https://api.supply-chain.cloud.aquasec.com'
+INPUT_CSV = 'successful_archived_repos.csv'
+OUTPUT_CSV = 'fetched_repos.csv'
+LOG_FILE = 'fetch_repos.log'
 
+# -----------------------------
+# Setup Logging
+# -----------------------------
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    filemode='w'
+)
+
+console = logging.StreamHandler(sys.stdout)
+console.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+console.setFormatter(formatter)
+logging.getLogger().addHandler(console)
+
+# -----------------------------
+# Get Headers
+# -----------------------------
 def get_headers(api_token):
     return {
         'Authorization': f'Bearer {api_token}',
@@ -23,104 +46,92 @@ def get_headers(api_token):
     }
 
 # -----------------------------
-# Logging Setup
+# Prompt for a valid token
 # -----------------------------
-logging.basicConfig(
-    filename='fetch_repo_info.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+def prompt_for_token():
+    while True:
+        token = input("Enter a valid Aqua API token: ").strip()
+        if validate_api_token(token):
+            return token
+        else:
+            logging.warning("Invalid token. Try again.")
 
-# -----------------------------
-# Validate Aqua API Token
-# -----------------------------
 def validate_api_token(api_token):
     test_url = f'{AQUA_API_INFO}/v2/build/repositories'
     try:
         response = requests.get(test_url, headers=get_headers(api_token), timeout=10, verify=False)
-        if response.status_code == 401:
-            return False
-        elif response.status_code != 200:
-            tqdm.write(f"[ERROR] Failed to validate token. Status Code: {response.status_code}")
-            tqdm.write(response.text)
-            return False
-        return True
-    except requests.exceptions.RequestException as e:
-        tqdm.write(f"[ERROR] Network error while validating token: {e}")
+        return response.status_code == 200
+    except Exception as e:
+        logging.error(f"Token validation error: {e}")
         return False
 
 # -----------------------------
-# Prompt for new token
+# Get Repo Info with Pagination
 # -----------------------------
-def prompt_for_token():
+def get_repository_info(repo_name, api_token):
+    page = 1
+    page_size = 50
+
     while True:
-        new_token = input("Your API token is invalid or expired. Please enter a new Aqua API token: ").strip()
-        if validate_api_token(new_token):
-            return new_token
-        else:
-            print("Invalid token. Please try again.\n")
+        try:
+            url = f'{AQUA_API_INFO}/v2/build/repositories'
+            encoded_name = quote_plus(repo_name)
+            params = {'name': encoded_name, 'page': page, 'limit': page_size}
+            response = requests.get(url, headers=get_headers(api_token), params=params, timeout=15, verify=False)
 
-# -----------------------------
-# Read input repo list
-# -----------------------------
-input_file = 'successful_archived_repos.csv'
+            if response.status_code == 401:
+                logging.warning(f"Unauthorized while fetching repo '{repo_name}'.")
+                return 'unauthorized', '', 'Unauthorized'
 
-try:
-    df = pd.read_csv(input_file)
-    if 'Repo Name' not in df.columns:
-        raise ValueError(f"'Repo Name' column not found in {input_file}")
-except FileNotFoundError:
-    tqdm.write(f"[ERROR] File '{input_file}' not found.")
-    sys.exit(1)
-except Exception as e:
-    tqdm.write(f"[ERROR] Reading CSV: {e}")
-    sys.exit(1)
+            if response.status_code != 200:
+                return 'error', '', f"HTTP {response.status_code}: {response.text}"
 
-repo_list = df['Repo Name'].dropna().tolist()
-
-# -----------------------------
-# Get Repository Info
-# -----------------------------
-def get_repository_info(name, api_token):
-    try:
-        encoded_name = quote_plus(name)
-        url = f'{AQUA_API_INFO}/v2/build/repositories?name={encoded_name}'
-        response = requests.get(url, headers=get_headers(api_token), timeout=10, verify=False)
-
-        if response.status_code == 200:
             data = response.json()
-            if data.get('total', 0) > 0:
-                repo_id = data['data'][0].get('repository_id', '')
-                return 'found', repo_id, 'Found'
-            else:
-                return 'not_found', '', 'Not Found in Aqua'
-        elif response.status_code == 401:
-            return 'unauthorized', '', 'Unauthorized - Invalid Token'
-        else:
-            return 'error', '', f"Fetch Error: {response.status_code} {response.text}"
-    except requests.exceptions.RequestException as e:
-        return 'error', '', f"Network Error: {e}"
+            repos = data.get('data', [])
+            total = data.get('total', 0)
+
+            for repo in repos:
+                if repo.get('name') == repo_name:
+                    return 'ok', repo.get('repository_id', ''), 'Found'
+
+            if page * page_size >= total:
+                return 'ok', '', 'Not Found (name mismatch)'
+            page += 1
+            sleep(0.2)  # Be nice to the API
+        except requests.exceptions.RequestException as e:
+            return 'error', '', f"Network error: {e}"
 
 # -----------------------------
-# Main Execution
+# Load Input
 # -----------------------------
-api_token = input("Enter your Aqua API token: ").strip()
+try:
+    df = pd.read_csv(INPUT_CSV)
+    if 'Repo Name' not in df.columns:
+        raise ValueError(f"'Repo Name' column not found in {INPUT_CSV}")
+    repo_list = df['Repo Name'].dropna().tolist()
+    logging.info(f"Loaded {len(repo_list)} repo names from {INPUT_CSV}")
+except Exception as e:
+    logging.error(f"Failed to load input file: {e}")
+    sys.exit(1)
 
-while not validate_api_token(api_token):
-    api_token = prompt_for_token()
-
+# -----------------------------
+# Start Fetching Repo Info
+# -----------------------------
+api_token = prompt_for_token()
 results = []
 
-for repo_name in tqdm(repo_list, desc="Fetching Repositories", unit="repo"):
+for repo_name in tqdm(repo_list, desc="Fetching Aqua Repos", unit="repo"):
     while True:
         status, repo_id, message = get_repository_info(repo_name, api_token)
+
         if status == 'unauthorized':
             api_token = prompt_for_token()
             continue
+        elif status == 'error':
+            logging.error(f"[{repo_name}] Fetch failed: {message}")
+        elif status == 'ok':
+            logging.info(f"[{repo_name}] → ID: {repo_id if repo_id else 'N/A'} | {message}")
         break
-
-    tqdm.write(f"Repo Name: {repo_name} | Repository ID: {repo_id or 'N/A'} | Status: {message}")
-    logging.info(f"Repo: {repo_name}, ID: {repo_id}, Status: {message}")
 
     results.append({
         'Repo Name': repo_name,
@@ -129,15 +140,14 @@ for repo_name in tqdm(repo_list, desc="Fetching Repositories", unit="repo"):
     })
 
 # -----------------------------
-# Save Results to CSV
+# Save to CSV
 # -----------------------------
-output_file = 'repo_fetch_results.csv'
 try:
     keys = ['Repo Name', 'Repository ID', 'Status']
-    with open(output_file, 'w', newline='', encoding='utf-8') as f:
-        dict_writer = csv.DictWriter(f, fieldnames=keys)
-        dict_writer.writeheader()
-        dict_writer.writerows(results)
-    tqdm.write(f"[INFO] Results written to '{output_file}'")
+    with open(OUTPUT_CSV, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=keys)
+        writer.writeheader()
+        writer.writerows(results)
+    logging.info(f"Results saved to {OUTPUT_CSV}")
 except Exception as e:
-    tqdm.write(f"[ERROR] Could not write to output CSV: {e}")
+    logging.error(f"Failed to write output CSV: {e}")
