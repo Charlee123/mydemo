@@ -63,13 +63,18 @@ def get_jobs_missing_aqua_stage():
         def check_folder_jobs(folder_path):
             try:
                 folder_jobs = server.get_jobs(folder_path)
+                if not folder_jobs:
+                    print(f"⚠️ No jobs found inside folder {folder_path}")
+                    return
+                
                 for job in folder_jobs:
                     job_name = job['name']
                     if 'folder' in job.get('class', ''):
+                        # It's a folder, recursively check its contents
                         print(f"🔍 Checking folder: {job_name}")
                         check_folder_jobs(job_name)  # Recursively check the folder
                     else:
-                        # It's a job, check for Aqua stage
+                        # It's a job, check it for Aqua stage
                         print(f"Checking job: {job_name}")
                         check_job_for_aqua(job_name)
 
@@ -83,7 +88,7 @@ def get_jobs_missing_aqua_stage():
                 print(f"🔍 Checking folder: {job_name}")
                 check_folder_jobs(job_name)  # Recursively check the folder
             else:
-                # It's a direct job, check it as usual
+                # It's a direct job, check it for Aqua stage
                 print(f"Checking job: {job_name}")
                 check_job_for_aqua(job_name)
 
