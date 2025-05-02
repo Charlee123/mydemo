@@ -7,7 +7,6 @@ import warnings
 from tqdm import tqdm
 from time import sleep
 from requests.packages.urllib3.exceptions import InsecureRequestWarning  # type: ignore
-from urllib.parse import quote_plus
 
 # Disable SSL warnings
 warnings.simplefilter('ignore', InsecureRequestWarning)
@@ -16,7 +15,7 @@ warnings.simplefilter('ignore', InsecureRequestWarning)
 # Configuration
 # -----------------------------
 AQUA_API_INFO = 'https://api.supply-chain.cloud.aquasec.com'
-INPUT_CSV = 'successful_archived_repos.csv'
+INPUT_CSV = 'inactive_repos.csv'
 OUTPUT_CSV = 'fetched_repos.csv'
 LOG_FILE = 'fetch_repos.log'
 
@@ -75,8 +74,7 @@ def get_repository_info(repo_name, api_token):
     while True:
         try:
             url = f'{AQUA_API_INFO}/v2/build/repositories'
-            encoded_name = quote_plus(repo_name)
-            params = {'name': encoded_name, 'page': page, 'limit': page_size}
+            params = {'name': repo_name, 'page': page, 'limit': page_size}
             response = requests.get(url, headers=get_headers(api_token), params=params, timeout=15, verify=False)
 
             if response.status_code == 401:
