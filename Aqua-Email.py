@@ -1,6 +1,5 @@
 import jenkins
 import csv
-import xml.etree.ElementTree as ET
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -54,7 +53,7 @@ session.verify = False  # This disables SSL certificate verification for all req
 server._session = session  # Assign this session to the Jenkins server instance
 
 # Recursively get all jobs (including nested folders)
-def get_all_jobs(jobs=None, prefix='', folder_depth=2):
+def get_all_jobs(jobs=None, prefix=''):
     if jobs is None:
         jobs = server.get_jobs()
 
@@ -66,9 +65,12 @@ def get_all_jobs(jobs=None, prefix='', folder_depth=2):
 
         if job_class == 'com.cloudbees.hudson.plugins.folder.Folder':
             subfolder_path = f"{prefix}{name}/"
-            # Fix: Explicitly pass folder_depth as an integer
-            sub_jobs = server.get_jobs(subfolder_path, folder_depth=int(folder_depth))  # Explicitly convert to integer
-            all_jobs.extend(get_all_jobs(sub_jobs, subfolder_path, folder_depth))  # Pass folder_depth explicitly
+            try:
+                # Removed folder_depth parameter for simplicity, just to debug
+                sub_jobs = server.get_jobs(subfolder_path)
+                all_jobs.extend(get_all_jobs(sub_jobs, subfolder_path))
+            except Exception as e:
+                print(f"⚠️ Error fetching subfolder jobs for {name}: {e}")
         else:
             job_path = f"{prefix}{name}"
             all_jobs.append({"name": job_path, "_class": job_class})
