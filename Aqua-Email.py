@@ -7,10 +7,10 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import os
 import requests
-from requests.packages.urllib3.exceptions import InsecureRequestWarning # type: ignore
+from requests.packages.urllib3.exceptions import InsecureRequestWarning  # type: ignore
 
 # Suppress the InsecureRequestWarning when using requests without SSL verification
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning) # type: ignore
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)  # type: ignore
 
 # Jenkins config
 JENKINS_URL = 'https://jenkins-ca-prod.global.iff.com/'
