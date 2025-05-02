@@ -6,9 +6,11 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import os
-import ssl
-from requests.adapters import HTTPAdapter
 import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
+# Suppress the InsecureRequestWarning when using requests without SSL verification
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 # Jenkins config
 JENKINS_URL = 'https://localhost:8080/'  # Make sure you're using https
@@ -43,22 +45,13 @@ DevSecOps Team
 # Output CSV
 ATTACHMENT_FILE = "jenkins_missing_aqua_stages.csv"
 
-# Disable SSL verification
-class SSLAdapter(HTTPAdapter):
-    def init_poolmanager(self, *args, **kwargs):
-        context = ssl.create_default_context()
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-        kwargs['context'] = context
-        return super(SSLAdapter, self).init_poolmanager(*args, **kwargs)
-
-# Connect to Jenkins with SSL verification disabled
+# Connect to Jenkins with SSL verification disabled (using verify=False)
 server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=API_TOKEN)
 
-# Apply the SSLAdapter to skip verification
+# Disable SSL verification globally for requests made by the Jenkins client
 session = requests.Session()
-session.mount('https://', SSLAdapter())
-server._session = session  # This will attach our session to the Jenkins instance
+session.verify = False  # This disables SSL certificate verification for all requests
+server._session = session  # Assign this session to the Jenkins server instance
 
 # Recursively get all jobs (including nested folders)
 def get_all_jobs(jobs=None, prefix=''):
