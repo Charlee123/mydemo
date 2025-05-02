@@ -7,27 +7,22 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import os
 import requests
-import urllib3
+import warnings
+from requests.auth import HTTPBasicAuth
+from urllib3.exceptions import InsecureRequestWarning
 
-# Suppress only the SSL warnings
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# Suppress SSL certificate warnings globally
+warnings.simplefilter('ignore', InsecureRequestWarning)
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 # Jenkins config
-JENKINS_URL = 'https://your-jenkins-url.com/'  # Use HTTPS URL
+JENKINS_URL = 'https://your-jenkins-url.com/'  # Replace with your Jenkins URL
 USERNAME = 'devsecops'
-API_TOKEN = 'your-api-token'
+API_TOKEN = 'your_api_token_here'
 
 # Gmail SMTP config
 SENDER_EMAIL = 'sharear.appsec@gmail.com'
-APP_PASSWORD = 'your-app-password'
-RECIPIENT_EMAIL = 'joseph.vinikoor@iff.com'
-SMTP_SERVER = 'smtp.gmail.com'
-SMTP_PORT = 587
-
-# Branches to scan
-TARGET_BRANCHES = ["main", "master", "dev", "qas", "prod"]
-
-# Email Recipients
+APP_PASSWORD = 'bgse sbdh yvgl nfbv'
 TO_EMAILS = ['sharear.ahmed@iff.com']
 CC_EMAILS = ['sharear.ahmed@iff.com']
 EMAIL_SUBJECT = '🔔 Jenkins Aqua Stage Check Report'
@@ -41,13 +36,37 @@ This is an automated email.
 Thanks,
 DevSecOps Team
 """
-
 ATTACHMENT_FILE = "jenkins_missing_aqua_stages.csv"
+TARGET_BRANCHES = ["main", "master", "dev", "qas", "prod"]
 
-# Connect to Jenkins
+# Get CSRF crumb for API access
+def get_crumb():
+    try:
+        crumb_url = f"{JENKINS_URL}crumbIssuer/api/json"
+        response = requests.get(crumb_url, auth=HTTPBasicAuth(USERNAME, API_TOKEN), verify=False)
+        response.raise_for_status()
+        crumb_data = response.json()
+        return {crumb_data['crumbRequestField']: crumb_data['crumb']}
+    except Exception as e:
+        print(f"⚠️ Failed to fetch crumb: {e}")
+        return {}
+
+# Function to fetch job config using direct API call with crumb
+def get_job_config_via_api(job_path):
+    url = f"{JENKINS_URL}job/{'/job/'.join(job_path.split('/'))}/config.xml"
+    headers = get_crumb()
+    try:
+        response = requests.get(url, auth=HTTPBasicAuth(USERNAME, API_TOKEN), headers=headers, verify=False)
+        response.raise_for_status()
+        return response.text
+    except Exception as e:
+        print(f"⚠️ Failed to get job config for {job_path}: {e}")
+        return ""
+
+# Connect to Jenkins using API
 server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=API_TOKEN)
 
-# Recursively get all jobs
+# Recursively fetch all jobs
 def get_all_jobs(jobs=None, prefix=''):
     if jobs is None:
         jobs = server.get_jobs()
@@ -68,42 +87,14 @@ def get_all_jobs(jobs=None, prefix=''):
 
     return all_jobs
 
-# CSRF crumb fetch
-def get_crumb():
-    try:
-        crumb_url = f"{JENKINS_URL}crumbIssuer/api/json"
-        response = requests.get(crumb_url, auth=(USERNAME, API_TOKEN), verify=False)
-        response.raise_for_status()
-        crumb_data = response.json()
-        return {crumb_data['crumbRequestField']: crumb_data['crumb']}
-    except Exception as e:
-        print(f"⚠️ Failed to fetch crumb: {e}")
-        return {}
-
-# Secure config fetch for job
-def get_job_config_secure(job_path):
-    try:
-        crumb_header = get_crumb()
-        headers = {}
-        if crumb_header:
-            headers.update(crumb_header)
-
-        config_url = f"{JENKINS_URL}job/{'/'.join(job_path.split('/'))}/config.xml"
-        response = requests.get(config_url, auth=(USERNAME, API_TOKEN), headers=headers, verify=False)
-        response.raise_for_status()
-        return response.text
-    except Exception as e:
-        print(f"⚠️ Failed to get config for {job_path}: {e}")
-        return ""
-
-# Send email with the CSV attachment
+# Send email
 def send_email():
     if not os.path.exists(ATTACHMENT_FILE):
         print(f"⚠️ Attachment file not found: {ATTACHMENT_FILE}")
         return
 
     msg = MIMEMultipart()
-    msg['From'] = 'DevSecOps Team <{}>'.format(SENDER_EMAIL)
+    msg['From'] = f'DevSecOps Team <{SENDER_EMAIL}>'
     msg['To'] = ', '.join(TO_EMAILS)
     msg['Cc'] = ', '.join(CC_EMAILS)
     msg['Subject'] = EMAIL_SUBJECT
@@ -116,10 +107,10 @@ def send_email():
 
     try:
         all_recipients = TO_EMAILS + CC_EMAILS
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SENDER_EMAIL, APP_PASSWORD)
-            server.sendmail(SENDER_EMAIL, all_recipients, msg.as_string())
+        with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
+            smtp.starttls()
+            smtp.login(SENDER_EMAIL, APP_PASSWORD)
+            smtp.sendmail(SENDER_EMAIL, all_recipients, msg.as_string())
         print(f"✅ Email sent successfully to {all_recipients}")
     except Exception as e:
         print(f"⚠️ Failed to send email: {e}")
@@ -129,42 +120,41 @@ def main():
     all_jobs = get_all_jobs()
     print(f"🔍 Total jobs found: {len(all_jobs)}")
 
-    multibranch_jobs = [job for job in all_jobs if 'workflow.multibranch' in job['_class']]
-    print(f"🔍 Multibranch jobs to scan: {len(multibranch_jobs)}")
-
     missing_aqua = []
 
-    for job in multibranch_jobs:
+    for job in all_jobs:
         job_name = job["name"]
-        try:
-            branches = server.get_job_info(job_name)['jobs']
-        except Exception as e:
-            print(f"⚠️ Failed to get branches for {job_name}: {e}")
-            continue
+        job_class = job["_class"]
 
-        for branch in branches:
-            branch_name = branch['name']
-            if branch_name not in TARGET_BRANCHES:
+        if 'workflow.multibranch' in job_class:
+            try:
+                branches = server.get_job_info(job_name)['jobs']
+            except Exception as e:
+                print(f"⚠️ Failed to get branches for {job_name}: {e}")
                 continue
 
-            try:
-                branch_builds = server.get_job_info(f"{job_name}/{branch_name}")['builds']
-                valid_builds = [b for b in branch_builds if isinstance(b.get('number'), int)]
-
-                if not valid_builds:
+            for branch in branches:
+                branch_name = branch['name']
+                if branch_name not in TARGET_BRANCHES:
                     continue
 
-                latest_build_number = sorted(valid_builds, key=lambda b: b['number'], reverse=True)[0]['number']
-                config_xml = get_job_config_secure(f"{job_name}/{branch_name}")
-
+                try:
+                    config_xml = get_job_config_via_api(f"{job_name}/{branch_name}")
+                    if "Aqua Security Scan" not in config_xml:
+                        print(f"❌ Aqua stage missing in: {job_name} -> {branch_name}")
+                        missing_aqua.append({"Project Name": job_name, "Branch Name": branch_name})
+                except Exception as e:
+                    print(f"⚠️ Error checking branch {branch_name} of {job_name}: {e}")
+        else:
+            try:
+                config_xml = get_job_config_via_api(job_name)
                 if "Aqua Security Scan" not in config_xml:
-                    print(f"❌ Aqua stage missing in: {job_name} -> {branch_name}")
-                    missing_aqua.append({"Project Name": job_name, "Branch Name": branch_name})
-
+                    print(f"❌ Aqua stage missing in: {job_name} -> N/A")
+                    missing_aqua.append({"Project Name": job_name, "Branch Name": "N/A"})
             except Exception as e:
-                print(f"⚠️ Error checking branch {branch_name} of {job_name}: {e}")
+                print(f"⚠️ Error checking job {job_name}: {e}")
 
-    # Write results to CSV
+    # Save results
     with open(ATTACHMENT_FILE, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.DictWriter(file, fieldnames=["Project Name", "Branch Name"])
         writer.writeheader()
