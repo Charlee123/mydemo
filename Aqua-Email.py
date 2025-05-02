@@ -54,7 +54,7 @@ session.verify = False  # This disables SSL certificate verification for all req
 server._session = session  # Assign this session to the Jenkins server instance
 
 # Recursively get all jobs (including nested folders)
-def get_all_jobs(jobs=None, prefix=''):
+def get_all_jobs(jobs=None, prefix='', folder_depth=2):
     if jobs is None:
         jobs = server.get_jobs()
 
@@ -67,12 +67,13 @@ def get_all_jobs(jobs=None, prefix=''):
         if job_class == 'com.cloudbees.hudson.plugins.folder.Folder':
             subfolder_path = f"{prefix}{name}/"
             sub_jobs = server.get_jobs(subfolder_path)
-            all_jobs.extend(get_all_jobs(sub_jobs, subfolder_path))
+            all_jobs.extend(get_all_jobs(sub_jobs, subfolder_path, folder_depth))  # Pass folder_depth explicitly
         else:
             job_path = f"{prefix}{name}"
             all_jobs.append({"name": job_path, "_class": job_class})
 
     return all_jobs
+
 
 # Send email with the CSV attachment
 def send_email():
