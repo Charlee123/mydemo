@@ -22,43 +22,61 @@ def get_jobs_missing_aqua_stage():
         jobs = server.get_jobs()
         print(f"🔍 Total jobs fetched: {len(jobs)}")  # Log total number of jobs
 
-        for job in jobs:
-            job_name = job['name']
-            print(f"Checking job: {job_name}")
-
+        # Function to recursively check for jobs inside folders
+        def check_folder_jobs(folder_path):
             try:
-                # Fetch job details and check if the 'builds' key exists
-                job_info = server.get_job_info(job_name)
-                builds = job_info.get('builds', [])
-                
-                if not builds:
-                    print(f"⚠️ No builds found for job: {job_name}")
-                    continue
+                folder_jobs = server.get_jobs(folder_path)
+                for job in folder_jobs:
+                    job_name = job['name']
+                    print(f"Checking job: {job_name}")
 
-                # Now, checking for Aqua stage in the builds
-                aqua_stage_missing = True
-                for build in builds:
-                    build_info = server.get_build_info(job_name, build['number'])
-                    actions = build_info.get('actions', [])
-                    
-                    found_aqua = False
-                    for action in actions:
-                        if isinstance(action, dict):
-                            # Check for Aqua-related parameters in the actions
-                            if 'Aqua' in action.get('parameters', []):
-                                found_aqua = True
+                    try:
+                        # Fetch job details and check if the 'builds' key exists
+                        job_info = server.get_job_info(job_name)
+                        builds = job_info.get('builds', [])
+                        
+                        if not builds:
+                            print(f"⚠️ No builds found for job: {job_name}")
+                            continue
+
+                        # Now, checking for Aqua stage in the builds
+                        aqua_stage_missing = True
+                        for build in builds:
+                            build_info = server.get_build_info(job_name, build['number'])
+                            actions = build_info.get('actions', [])
+                            
+                            found_aqua = False
+                            for action in actions:
+                                if isinstance(action, dict):
+                                    # Check for Aqua-related parameters in the actions
+                                    if 'Aqua' in action.get('parameters', []):
+                                        found_aqua = True
+                                        break
+
+                            if found_aqua:
+                                aqua_stage_missing = False
                                 break
 
-                    if found_aqua:
-                        aqua_stage_missing = False
-                        break
+                        if aqua_stage_missing:
+                            missing_aqua_jobs.append(job_name)
+                            print(f"⚠️ Aqua stage missing for job: {job_name}")
+                    
+                    except Exception as e:
+                        print(f"⚠️ Error checking job {job_name}: {e}")
 
-                if aqua_stage_missing:
-                    missing_aqua_jobs.append(job_name)
-                    print(f"⚠️ Aqua stage missing for job: {job_name}")
-            
             except Exception as e:
-                print(f"⚠️ Error checking job {job_name}: {e}")
+                print(f"⚠️ Error checking folder {folder_path}: {e}")
+
+        # Check all the top-level jobs and folders
+        for job in jobs:
+            job_name = job['name']
+            if 'folder' in job.get('class', ''):
+                print(f"🔍 Checking folder: {job_name}")
+                check_folder_jobs(job_name)  # Recursively check the folder
+            else:
+                # It's a direct job, so we check it as usual
+                print(f"Checking job: {job_name}")
+                check_folder_jobs('')
 
         return missing_aqua_jobs
 
