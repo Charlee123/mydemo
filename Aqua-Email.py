@@ -6,15 +6,12 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import os
-import warnings
 import requests
-
-# Disable SSL and insecure request warnings
-requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
-warnings.filterwarnings("ignore", category=InsecureRequestWarning)
+import warnings
+from urllib3.exceptions import InsecureRequestWarning  # Add this import
 
 # Jenkins config
-JENKINS_URL = 'https://your-jenkins-url.com/'  # Use the HTTPS URL here
+JENKINS_URL = 'http://localhost:8080/'  # Replace with your Jenkins URL
 USERNAME = 'devsecops'
 API_TOKEN = '11eca10940c16f371ded6738424553213f'
 
@@ -29,8 +26,8 @@ SMTP_PORT = 587  # SMTP port for TLS
 TARGET_BRANCHES = ["main", "master", "dev", "qas", "prod"]
 
 # Email Recipients
-TO_EMAILS = ['sharear.ahmed@iff.com', 'sharear.ahmed@iff.com']  # Main recipients
-CC_EMAILS = ['sharear.ahmed@iff.com', 'sharear.ahmed@iff.com']  # CC recipients
+TO_EMAILS =  ['sharear.ahmed@iff.com', 'sharear.ahmed@iff.com' ]  # Main recipients
+CC_EMAILS = ['sharear.ahmed@iff.com', 'sharear.ahmed@iff.com']               # CC recipients
 EMAIL_SUBJECT = '🔔 Jenkins Aqua Stage Check Report'
 EMAIL_BODY = """
 Hi Team,
@@ -46,8 +43,20 @@ DevSecOps Team
 # Output CSV
 ATTACHMENT_FILE = "jenkins_missing_aqua_stages.csv"
 
-# Connect to Jenkins
-server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=API_TOKEN, ssl_verify=False)
+# Connect to Jenkins and disable SSL certificate verification
+def patch_requests():
+    session = requests.Session()
+    session.verify = False  # Disable SSL verification
+    # Apply the patch globally
+    requests.Session = lambda: session
+
+# Disable SSL and insecure request warnings
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+warnings.filterwarnings("ignore", category=InsecureRequestWarning)
+
+patch_requests()
+
+server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=API_TOKEN)
 
 # Recursively get all jobs (including nested folders)
 def get_all_jobs(jobs=None, prefix=''):
@@ -108,49 +117,41 @@ def main():
     all_jobs = get_all_jobs()
     print(f"🔍 Total jobs found: {len(all_jobs)}")
 
+    # Filter multibranch pipeline jobs
+    multibranch_jobs = [job for job in all_jobs if 'workflow.multibranch' in job['_class']]
+    print(f"🔍 Multibranch jobs to scan: {len(multibranch_jobs)}")
+
     missing_aqua = []
 
-    for job in all_jobs:
+    for job in multibranch_jobs:
         job_name = job["name"]
-        job_class = job["_class"]
-        print(f"Checking job: {job_name}")
-
         try:
-            if 'workflow.multibranch' in job_class:
-                # Handle multibranch job
-                branches = server.get_job_info(job_name)['jobs']
-                for branch in branches:
-                    branch_name = branch['name']
-                    if branch_name not in TARGET_BRANCHES:
-                        continue
+            branches = server.get_job_info(job_name)['jobs']
+        except Exception as e:
+            print(f"⚠️ Failed to get branches for {job_name}: {e}")
+            continue
 
-                    try:
-                        branch_builds = server.get_job_info(f"{job_name}/{branch_name}")['builds']
-                        valid_builds = [b for b in branch_builds if isinstance(b.get('number'), int)]
+        for branch in branches:
+            branch_name = branch['name']
+            if branch_name not in TARGET_BRANCHES:
+                continue
 
-                        if not valid_builds:
-                            continue
+            try:
+                branch_builds = server.get_job_info(f"{job_name}/{branch_name}")['builds']
+                valid_builds = [b for b in branch_builds if isinstance(b.get('number'), int)]
 
-                        latest_build_number = sorted(valid_builds, key=lambda b: b['number'], reverse=True)[0]['number']
-                        config_xml = server.get_job_config(f"{job_name}/{branch_name}")
+                if not valid_builds:
+                    continue
 
-                        if "Aqua Security Scan" not in config_xml:
-                            print(f"❌ Aqua stage missing in: {job_name} -> {branch_name}")
-                            missing_aqua.append({"Project Name": job_name, "Branch Name": branch_name})
-
-                    except Exception as e:
-                        print(f"⚠️ Error checking branch {branch_name} of {job_name}: {e}")
-            else:
-                # Handle non-multibranch (single-branch) jobs (pipeline/freestyle)
-                branch_name = "N/A"
-                config_xml = server.get_job_config(job_name)
+                latest_build_number = sorted(valid_builds, key=lambda b: b['number'], reverse=True)[0]['number']
+                config_xml = server.get_job_config(f"{job_name}/{branch_name}")
 
                 if "Aqua Security Scan" not in config_xml:
-                    print(f"❌ Aqua stage missing in: {job_name}")
+                    print(f"❌ Aqua stage missing in: {job_name} -> {branch_name}")
                     missing_aqua.append({"Project Name": job_name, "Branch Name": branch_name})
 
-        except Exception as e:
-            print(f"⚠️ Error checking job {job_name}: {e}")
+            except Exception as e:
+                print(f"⚠️ Error checking branch {branch_name} of {job_name}: {e}")
 
     # Write results to CSV
     with open(ATTACHMENT_FILE, mode='w', newline='', encoding='utf-8') as file:
