@@ -1,77 +1,112 @@
 import requests
 import csv
+import logging
+import urllib3
+from urllib.parse import urljoin
 
+# Suppress SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Jenkins configuration
 JENKINS_URL = "https://my.jenkins.com"
 FOLDER_PATH = "application"
 AQUA_STAGE_NAME = "Aqua Code Scan"
+USERNAME = "your_username"
+PASSWORD = "your_password"  # Replace with Jenkins password
 
-# Replace these with your Jenkins user and API token
-USERNAME = "devsecops"
-API_TOKEN = "test"
+# Logging setup
+logging.basicConfig(
+    filename="jenkins_aqua_check.log",
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
 
-AUTH = (USERNAME, API_TOKEN)
+# Setup session
+session = requests.Session()
+session.auth = (USERNAME, PASSWORD)
+session.verify = False  # Disable SSL verification for self-signed certs
+session.headers.update({"Accept": "application/json"})
+
 
 def get_json(url):
-    full_url = f"{url}/api/json"
-    response = requests.get(full_url, auth=AUTH)
-    response.raise_for_status()
-    return response.json()
+    try:
+        res = session.get(f"{url}/api/json")
+        res.raise_for_status()
+        return res.json()
+    except requests.RequestException as e:
+        logging.error(f"Failed to fetch URL: {url} - {e}")
+        return None
 
-def get_all_jobs(folder):
-    url = f"{JENKINS_URL}/job/{folder}"
-    data = get_json(url)
+
+def get_all_jobs(folder_url):
+    """Returns all jobs (including multibranch) under the folder"""
     jobs = []
+    data = get_json(folder_url)
+    if not data:
+        return jobs
 
-    for job in data.get('jobs', []):
-        if job['_class'] in ('com.cloudbees.hudson.plugins.folder.Folder',):
-            # Nested folder - optional to recurse
-            continue
-        jobs.append({
-            "name": job['name'],
-            "url": job['url'].rstrip("/")
-        })
+    for job in data.get("jobs", []):
+        job_name = job["name"]
+        job_url = job["url"].rstrip("/")
+        job_class = job["_class"]
+
+        if "MultiBranchProject" in job_class:
+            branch_data = get_json(job_url)
+            if branch_data:
+                for branch in branch_data.get("jobs", []):
+                    jobs.append({
+                        "name": f"{job_name}/{branch['name']}",
+                        "url": branch["url"].rstrip("/")
+                    })
+        else:
+            jobs.append({"name": job_name, "url": job_url})
 
     return jobs
 
-def aqua_stage_present(job_url):
-    # Check last successful build's pipeline stages
-    try:
-        build_data = get_json(f"{job_url}/lastSuccessfulBuild")
-        build_id = build_data.get("id")
-        if not build_id:
-            return False, "No successful build"
-        
-        stages_url = f"{job_url}/lastSuccessfulBuild/executions"
-        stage_data = get_json(stages_url)
 
-        stages = [s.get("name") for s in stage_data.get("pipelines", []) if s.get("name")]
-        if AQUA_STAGE_NAME in stages:
-            return True, ""
-        else:
-            return False, "Aqua Code Scan stage not found"
+def has_aqua_stage(job_url):
+    build_data = get_json(f"{job_url}/lastSuccessfulBuild")
+    if not build_data or not build_data.get("id"):
+        return False, "No successful build"
 
-    except requests.HTTPError:
-        return False, "Error accessing build data"
+    execution_data = get_json(f"{job_url}/lastSuccessfulBuild/executions")
+    if not execution_data:
+        return False, "Failed to get stages"
+
+    stage_names = [stage["name"] for stage in execution_data.get("pipelines", []) if "name" in stage]
+
+    if AQUA_STAGE_NAME in stage_names:
+        return True, ""
+    else:
+        return False, "Aqua Code Scan stage not found"
+
 
 def main():
-    jobs = get_all_jobs(FOLDER_PATH)
+    logging.info("Starting Jenkins Aqua stage audit (username/password auth)...")
+    folder_url = urljoin(JENKINS_URL + "/", f"job/{FOLDER_PATH}")
+    jobs = get_all_jobs(folder_url)
     missing_aqua = []
 
     for job in jobs:
-        print(f"Checking {job['name']}...")
-        present, reason = aqua_stage_present(job["url"])
-        if not present:
-            missing_aqua.append({
-                "Application/Job": job["name"],
-                "Reason": reason
-            })
+        logging.info(f"Checking job: {job['name']}")
+        try:
+            found, reason = has_aqua_stage(job["url"])
+            if not found:
+                missing_aqua.append({
+                    "Application/Job": job["name"],
+                    "Reason": reason
+                })
+        except Exception as e:
+            logging.exception(f"Error while checking {job['name']}: {e}")
 
-    with open("missing_aqua_stages.csv", "w", newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=["Application/Job", "Reason"])
+    # Save to CSV
+    with open("missing_aqua_stages.csv", "w", newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=["Application/Job", "Reason"])
         writer.writeheader()
         writer.writerows(missing_aqua)
 
-    print("✅ Report generated: missing_aqua_stages.csv")
+    logging.info("✅ Audit complete. Report saved to missing_aqua_stages.csv")
+
 
 if __name__ == "__main__":
     main()
