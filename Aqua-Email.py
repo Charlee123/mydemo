@@ -54,7 +54,10 @@ server._session = session  # Assign this session to the Jenkins server instance
 
 # Fetch all jobs and handle folder jobs explicitly
 def get_all_jobs():
+    print("Fetching jobs from Jenkins...")  # Debug log
     jobs = server.get_jobs()  # Fetch all jobs at the root level
+    print(f"Fetched Jobs: {jobs}")  # Debugging the jobs fetched
+
     all_jobs = []
 
     for job in jobs:
