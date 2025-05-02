@@ -27,12 +27,32 @@ def get_jobs_missing_aqua_stage():
             print(f"Checking job: {job_name}")
 
             try:
-                # Fetch the build information for each job
-                build_info = server.get_job_info(job_name)
-                # Check if Aqua stage is missing
-                if 'Aqua' not in build_info['builds']:
+                # Fetch job details and check if the 'builds' key exists
+                job_info = server.get_job_info(job_name)
+                builds = job_info.get('builds', [])
+
+                if not builds:
+                    print(f"⚠️ No builds found for job: {job_name}")
+                    continue
+
+                # Now, checking for Aqua stage in the builds (assuming Aqua is in the build actions or steps)
+                aqua_stage_missing = True
+                for build in builds:
+                    build_info = server.get_build_info(job_name, build['number'])
+                    actions = build_info.get('actions', [])
+
+                    for action in actions:
+                        if isinstance(action, dict) and 'Aqua' in action.get('parameters', {}):
+                            aqua_stage_missing = False
+                            break
+
+                    if not aqua_stage_missing:
+                        break
+
+                if aqua_stage_missing:
                     missing_aqua_jobs.append(job_name)
                     print(f"⚠️ Aqua stage missing for job: {job_name}")
+            
             except Exception as e:
                 print(f"⚠️ Error checking job {job_name}: {e}")
 
