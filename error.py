@@ -4,16 +4,15 @@ import sys
 import csv
 import warnings
 from tqdm import tqdm
-from requests.packages.urllib3.exceptions import InsecureRequestWarning # type: ignore
+from requests.packages.urllib3.exceptions import InsecureRequestWarning  # type: ignore
 
 warnings.simplefilter('ignore', InsecureRequestWarning)
-
 
 # -----------------------------
 # Aqua Security API Setup
 # -----------------------------
 AQUA_API_URL = 'https://codesec.aquasec.com'  # Replace with your Aqua API URL
-AQUA_API_INFO= 'https://api.supply-chain.cloud.aquasec.com'
+AQUA_API_INFO = 'https://api.supply-chain.cloud.aquasec.com'
 
 def get_headers(api_token):
     return {
@@ -78,7 +77,10 @@ def get_repository_info(name, api_token):
         if response.status_code == 200:
             data = response.json()
             if data.get('total', 0) > 0:
-                return data['data'][0]
+                for repo in data.get('data', []):
+                    if repo.get('name') == name:
+                        return repo
+                return None  # Not found in exact match
             else:
                 return None
         elif response.status_code == 401:
@@ -136,16 +138,20 @@ for repo_name in tqdm(repo_list, desc="Fetching Info", unit="repo"):
     elif isinstance(repo_info, dict) and 'error' in repo_info:
         results.append({'Repo Name': repo_name, 'Repository ID': '', 'Status': f"Fetch Error: {repo_info['error']}"})
     else:
-        repo_id = repo_info.get('id', '')
-        repo_ids_to_delete.append({'id': repo_id, 'name': repo_name})
-        results.append({'Repo Name': repo_name, 'Repository ID': repo_id, 'Status': 'Pending Deletion'})
+        repo_id = repo_info.get('repository_id', '')
+        if not repo_id:
+            results.append({'Repo Name': repo_name, 'Repository ID': '', 'Status': 'Missing repository_id'})
+        else:
+            print(f"[INFO] Repo matched: {repo_name} | repository_id: {repo_id}")
+            repo_ids_to_delete.append({'id': repo_id, 'name': repo_name})
+            results.append({'Repo Name': repo_name, 'Repository ID': repo_id, 'Status': 'Pending Deletion'})
 
 # -----------------------------
 # Delete in Batches & Log Status
 # -----------------------------
 if repo_ids_to_delete:
     batch_size = 100
-    for i in tqdm(range(0, len(repo_ids_to_delete), batch_size), desc="Deleting Batches", uint="batch"):
+    for i in tqdm(range(0, len(repo_ids_to_delete), batch_size), desc="Deleting Batches", unit="batch"):
         batch = repo_ids_to_delete[i:i + batch_size]
         batch_ids = [r['id'] for r in batch]
 
