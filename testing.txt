@@ -1,7 +1,9 @@
-⚠️ Error fetching subfolder jobs for application: '<' not supported between instances of 'int' and 'str'
-⚠️ Error fetching subfolder jobs for infrastructure: '<' not supported between instances of 'int' and 'str'
-⚠️ Error fetching subfolder jobs for salesforce-org: '<' not supported between instances of 'int' and 'str'
-🔍 Total jobs found: 0
-
-📁 Saved 0 job(s) missing Aqua stage to: jenkins_missing_aqua_stages.csv
-✅ Email sent successfully to ['sharear.ahmed@iff.com', 'sharear.ahmed@iff.com', 'sharear.ahmed@iff.com', 'sharear.ahmed@iff.com']
+Fetching jobs from Jenkins...
+🔍 Total jobs fetched: 3
+Checking job: application
+⚠️ Error checking job application: 'builds'
+Checking job: infrastructure
+⚠️ Error checking job infrastructure: 'builds'
+Checking job: salesforce-org
+⚠️ Error checking job salesforce-org: 'builds'
+No jobs found missing Aqua stage!
