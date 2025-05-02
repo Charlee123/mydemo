@@ -14,14 +14,19 @@ AQUA_STAGE_NAME = "Aqua Code Scan"
 USERNAME = "your_username"
 PASSWORD = "your_password"  # Replace with Jenkins password
 
-# Logging setup
-logging.basicConfig(
-    filename="jenkins_aqua_check.log",
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+# Logging setup: to file AND console
+logger = logging.getLogger("JenkinsAquaCheck")
+logger.setLevel(logging.INFO)
 
-# Setup session
+file_handler = logging.FileHandler("jenkins_aqua_check.log")
+file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+logger.addHandler(file_handler)
+
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+logger.addHandler(console_handler)
+
+# Session setup
 session = requests.Session()
 session.auth = (USERNAME, PASSWORD)
 session.verify = False  # Disable SSL verification for self-signed certs
@@ -34,17 +39,18 @@ def get_json(url):
         res.raise_for_status()
         return res.json()
     except requests.RequestException as e:
-        logging.error(f"Failed to fetch URL: {url} - {e}")
+        logger.error(f"Failed to fetch URL: {url} - {e}")
         return None
 
 
 def get_all_jobs(folder_url):
-    """Returns all jobs (including multibranch) under the folder"""
     jobs = []
     data = get_json(folder_url)
     if not data:
+        logger.error("❌ Failed to retrieve jobs in folder.")
         return jobs
 
+    logger.info(f"📁 Found {len(data.get('jobs', []))} items in '{FOLDER_PATH}' folder.")
     for job in data.get("jobs", []):
         job_name = job["name"]
         job_url = job["url"].rstrip("/")
@@ -61,6 +67,7 @@ def get_all_jobs(folder_url):
         else:
             jobs.append({"name": job_name, "url": job_url})
 
+    logger.info(f"🔍 Total jobs/branches to check: {len(jobs)}")
     return jobs
 
 
@@ -74,7 +81,6 @@ def has_aqua_stage(job_url):
         return False, "Failed to get stages"
 
     stage_names = [stage["name"] for stage in execution_data.get("pipelines", []) if "name" in stage]
-
     if AQUA_STAGE_NAME in stage_names:
         return True, ""
     else:
@@ -82,30 +88,44 @@ def has_aqua_stage(job_url):
 
 
 def main():
-    logging.info("Starting Jenkins Aqua stage audit (username/password auth)...")
+    logger.info("🚀 Starting Jenkins Aqua Code Scan audit...")
+
     folder_url = urljoin(JENKINS_URL + "/", f"job/{FOLDER_PATH}")
+    logger.info(f"🔐 Authenticating to Jenkins at {JENKINS_URL}...")
+
+    # Quick check to verify Jenkins is reachable
+    test = get_json(folder_url)
+    if not test:
+        logger.error("❌ Authentication failed or Jenkins not reachable.")
+        return
+    logger.info("✅ Jenkins authenticated successfully.")
+
     jobs = get_all_jobs(folder_url)
     missing_aqua = []
 
     for job in jobs:
-        logging.info(f"Checking job: {job['name']}")
+        logger.info(f"🔎 Checking job: {job['name']}")
         try:
             found, reason = has_aqua_stage(job["url"])
             if not found:
+                logger.warning(f"⚠️  Missing Aqua stage in: {job['name']} — {reason}")
                 missing_aqua.append({
                     "Application/Job": job["name"],
                     "Reason": reason
                 })
+            else:
+                logger.info(f"✅ Aqua stage found in: {job['name']}")
         except Exception as e:
-            logging.exception(f"Error while checking {job['name']}: {e}")
+            logger.exception(f"Error checking {job['name']}: {e}")
 
-    # Save to CSV
+    # Write report
     with open("missing_aqua_stages.csv", "w", newline='') as f:
         writer = csv.DictWriter(f, fieldnames=["Application/Job", "Reason"])
         writer.writeheader()
         writer.writerows(missing_aqua)
 
-    logging.info("✅ Audit complete. Report saved to missing_aqua_stages.csv")
+    logger.info("📄 CSV report saved as: missing_aqua_stages.csv")
+    logger.info(f"✅ Audit complete. {len(missing_aqua)} jobs missing Aqua Code Scan stage.")
 
 
 if __name__ == "__main__":
