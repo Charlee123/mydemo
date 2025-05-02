@@ -1,0 +1,66 @@
+File "C:\Users\1304617\AppData\Local\Programs\Python\Python313\Lib\site-packages\jenkins\__init__.py", line 588, in jenkins_request
+    return self._response_handler(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        self._request(req, stream))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\1304617\AppData\Local\Programs\Python\Python313\Lib\site-packages\jenkins\__init__.py", line 541, in _response_handler
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\1304617\AppData\Local\Programs\Python\Python313\Lib\site-packages\requests\models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: Server Error for url: https://jenkins-ca-prod.global.iff.com/crumbIssuer/api/json
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "c:\Users\1304617\OneDrive - International Flavors & Fragrances Inc\Desktop\Scripts\Aqua-Test.py", line 55, in <module>
+    all_jobs = get_all_jobs()
+  File "c:\Users\1304617\OneDrive - International Flavors & Fragrances Inc\Desktop\Scripts\Aqua-Test.py", line 36, in get_all_jobs
+    jobs = server.get_jobs()
+  File "C:\Users\1304617\AppData\Local\Programs\Python\Python313\Lib\site-packages\jenkins\__init__.py", line 1064, in get_jobs
+    return self.get_all_jobs(folder_depth=folder_depth,
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             folder_depth_per_request=folder_depth_per_request)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\1304617\AppData\Local\Programs\Python\Python313\Lib\site-packages\jenkins\__init__.py", line 1105, in get_all_jobs
+    jobs = [(0, [], self.get_info(query=jobs_query)['jobs'])]
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\1304617\AppData\Local\Programs\Python\Python313\Lib\site-packages\jenkins\__init__.py", line 853, in get_info
+    return json.loads(self.jenkins_open(
+                      ~~~~~~~~~~~~~~~~~^
+        requests.Request('GET', self._build_url(url))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ))
+    ^
+  File "C:\Users\1304617\AppData\Local\Programs\Python\Python313\Lib\site-packages\jenkins\__init__.py", line 562, in jenkins_open
+    return self.jenkins_request(req, add_crumb, resolve_auth).text
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\1304617\AppData\Local\Programs\Python\Python313\Lib\site-packages\jenkins\__init__.py", line 586, in jenkins_request
+    self.maybe_add_crumb(req)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\1304617\AppData\Local\Programs\Python\Python313\Lib\site-packages\jenkins\__init__.py", line 375, in maybe_add_crumb
+    response = self.jenkins_open(requests.Request(
+        'GET', self._build_url(CRUMB_URL)), add_crumb=False)
+  File "C:\Users\1304617\AppData\Local\Programs\Python\Python313\Lib\site-packages\jenkins\__init__.py", line 562, in jenkins_open
+    return self.jenkins_request(req, add_crumb, resolve_auth).text
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\1304617\AppData\Local\Programs\Python\Python313\Lib\site-packages\jenkins\__init__.py", line 600, in jenkins_request
+    raise JenkinsException(msg)
+jenkins.JenkinsException: Error in request. Possibly authentication failed [500]: Server Error
+
+
+  <!DOCTYPE html><html><head resURL="/static/a83ca03b" data-rooturl="" data-resurl="/static/a83ca03b" data-extensions-available="true" data-unit-test="false" data-imagesurl="/static/a83ca03b/images" data-crumb-header="Jenkins-Crumb" data-crumb-value="e9d5959165332b7217418c504f28b09e544fbd220681b7a4a0596c38b4b20f25">
+
+
+
+    <title>Jenkins [Jenkins]</title><link rel="stylesheet" href="/static/a83ca03b/jsbundles/styles.css" type="text/css"><link rel="stylesheet" href="/static/a83ca03b/css/responsive-grid.css" type="text/css"><link rel="icon" href="/static/a83ca03b/favicon.svg" type="image/svg+xml"><link sizes="any" rel="alternate icon" href="/static/a83ca03b/favicon.ico"><link sizes="180x180" rel="apple-touch-icon" href="/static/a83ca03b/apple-touch-icon.png"><link color="#191717" rel="mask-icon" href="/static/a83ca03b/mask-icon.svg"><meta name="theme-color" content="#ffffff"><script src="/static/a83ca03b/scripts/behavior.js" type="text/javascript"></script><script src='/adjuncts/a83ca03b/org/kohsuke/stapler/bind.js' type='text/javascript'></script><script src="/static/a83ca03b/scripts/hudson-behavior.js" type="text/javascript"></script><script src="/static/a83ca03b/scripts/sortable.js" type="text/javascript"></script><meta name="ROBOTS" content="INDEX,NOFOLLOW"><meta name="viewport" content="width=device-width, initial-scale=1"><script src="/adjuncts/a83ca03b/org/kohsuke/stapler/jquery/jquery.full.js" type="text/javascript"></script><script src='/adjuncts/a83ca03b/hudson/plugins/jquery/JQuery/jquery-no-conflict.js' type='text/javascript'></script><script src='/adjuncts/a83ca03b/org/jenkinsci/plugins/scriptsecurity/scripts/ScriptApproval/FormValidationPageDecorator/validate.js' type='text/javascript'></script><script id="theme-manager-theme" type="application/json">{ "id": "none", "respect_system_appearance":  false }</script>
+  <link type="text/css" rel="stylesheet" href="https://jenkins-ca-prod.global.iff.com/theme-dark/theme.css"/>    
+<script id="theme-manager-properties" type="application/json">{}</script>
+  <script src='/adjuncts/a83ca03b/io/jenkins/plugins/thememanager/header/main.js' type='text/javascript'></script><script src="/static/a83ca03b/jsbundles/vendors.js" type="text/javascript"></script><script src="/static/a83ca03b/jsbundles/sortable-drag-drop.js" type="text/javascript"></script><script defer="true" src="/static/a83ca03b/jsbundles/app.js" type="text/javascript"></script></head><body data-model-type="hudson.model.Hudson" id="jenkins" class=" one-column jenkins-2.492.2" data-version="2.492.2"><div data-help="Help" data-no-results-for="No results for" id="command-palette-i18n" class="i18n" data-get-help="Get help using Jenkins search"></div><dialog id="command-palette" class="jenkins-command-palette__dialog"><div class="jenkins-command-palette__wrapper"><div class="jenkins-command-palette"><div class="jenkins-search-container"><div class="jenkins-search  jenkins-command-palette__search"><div class="jenkins-search__icon"><svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" viewBox="0 0 512 512"><title/><path d="M221.09 64a157.09 157.09 0 10157.09 157.09A157.1 157.1 0 00221.09 64z" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32"/><path d="M338.29 338.29L448 448" fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32"/></svg></div><input autocorrect="off" autocomplete="off" spellcheck="false" id="command-bar" placeholder="Search" type="search" class="jenkins-search__input" autocapitalize="off"></div></div><div id="search-results-container" class="jenkins-command-palette__results-container"><div id="search-results" class="jenkins-command-palette__results"></div></div></div></div></dialog><a href="#skip2content" class="jenkins-skip-link">Skip to content</a><header id="page-header" class="page-header"><div class="page-header__brand"><div class="logo"><a id="jenkins-home-link" href="/"><img src="/static/a83ca03b/images/svgs/logo.svg" alt="[Jenkins]" id="jenkins-head-icon"><img src="/static/a83ca03b/images/title.svg" alt="Jenkins" width="139" id="jenkins-name-icon" height="34"></a></div><a href="/" class="page-header__brand-link"><img src="/static/a83ca03b/images/svgs/logo.svg" alt="[Jenkins]" class="page-header__brand-image"><span class="page-header__brand-name">Jenkins</span></a></div><div class="page-header__hyperlinks"><button data-keyboard-shortcut="CMD+K" data-html-tooltip="&lt;div class=&quot;jenkins-keyboard-shortcut__tooltip&quot;&gt;&lt;span class=&quot;jenkins-!-margin-right-1&quot;&gt;Search&lt;/span&gt;&lt;div class=&quot;jenkins-keyboard-shortcut&quot;&gt;CTRL+K&lt;/div&gt;&lt;/div&gt;" id="button-open-command-palette" data-search-url="/search/suggest" data-search-help-url="https://www.jenkins.io/redirect/search-box"><svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" viewBox="0 0 512 512"><title/><path d="M221.09 64a157.09 157.09 0 10157.09 157.09A157.1 157.1 0 00221.09 64z" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32"/><path d="M338.29 338.29L448 448" fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32"/></svg></button></div><script src="/static/a83ca03b/jsbundles/keyboard-shortcuts.js" type="text/javascript"></script><div class="login page-header__hyperlinks"><div id="visible-am-insertion" class="page-header__am-wrapper"></div><div id="visible-sec-am-insertion" class="page-header__am-wrapper"></div><a href="/login?from=%2FcrumbIssuer%2Fapi%2Fjson">log in</a></div></header><div id="breadcrumbBar" class="jenkins-breadcrumbs" aria-label="breadcrumb"><ol class="jenkins-breadcrumbs__list" id="breadcrumbs"><li class="jenkins-breadcrumbs__list-item"><a href="/" class="model-link">Dashboard</a></li><li class="children" data-href="/"></li></ol></div><div id="page-body" class="app-page-body app-page-body--one-column clear"><div id="main-panel"><a id="skip2content"></a><!--
+start of main content ⇒
+--><h1 style="text-align: center"><img src="/static/a83ca03b/images/rage.svg" width="154" height="179"><span style="font-size:50px"> Oops!</span></h1><div id="error-description"><h2 style="text-align: center">A problem occurred while processing the request</h2><p style="text-align: center">Logging ID=0477d7bb-a4a7-4ca5-b181-ca7d1e4abbb4</div><!--
+⇐ end of main content
+--></div></div><footer class="page-footer jenkins-mobile-hide"><div class="page-footer__flex-row"><div class="page-footer__footer-id-placeholder" id="footer"></div><div class="page-footer__links"><a class="jenkins-button jenkins-button--tertiary rest-api" href="api/">REST API</a><button type="button" class="jenkins-button jenkins-button--tertiary jenkins_ver" data-dropdown="true">
+
+    Jenkins 2.492.2
+  </button><template><div class="jenkins-dropdown"><template data-dropdown-icon="&lt;svg xmlns=&quot;http://www.w3.org/2000/svg&quot; aria-hidden=&quot;true&quot; viewBox=&quot;0 0 512 512&quot;&gt;&lt;path d=&quot;M352.92 80C288 80 256 144 256 144s-32-64-96.92-64c-52.76 0-94.54 44.14-95.08 96.81-1.1 109.33 86.73 187.08 183 252.42a16 16 0 0018 0c96.26-65.34 184.09-143.09 183-252.42-.54-52.67-42.32-96.81-95.08-96.81z&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-linecap=&quot;round&quot; stroke-linejoin=&quot;round&quot; stroke-width=&quot;32&quot;/&gt;&lt;/svg&gt;" data-dropdown-text="Get involved" data-dropdown-type="ITEM" data-dropdown-href="https://www.jenkins.io/participate/"></template><template data-dropdown-icon="&lt;svg xmlns=&quot;http://www.w3.org/2000/svg&quot; aria-hidden=&quot;true&quot; viewBox=&quot;0 0 512 512&quot;&gt;&lt;path d=&quot;M384 224v184a40 40 0 01-40 40H104a40 40 0 01-40-40V168a40 40 0 0140-40h167.48M336 64h112v112M224 288L440 72&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-linecap=&quot;round&quot; stroke-linejoin=&quot;round&quot; stroke-width=&quot;32&quot;/&gt;&lt;/svg&gt;" data-dropdown-text="Website" data-dropdown-type="ITEM" data-dropdown-href="https://www.jenkins.io/"></template></div></template></div></div></footer></body></html>
