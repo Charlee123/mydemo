@@ -1,9 +1,9 @@
 Fetching jobs from Jenkins...
 🔍 Total jobs fetched: 3
 Checking job: application
-⚠️ No builds found for job: application
+⚠️ Error checking folder : '<' not supported between instances of 'int' and 'str'
 Checking job: infrastructure
-⚠️ No builds found for job: infrastructure
+⚠️ Error checking folder : '<' not supported between instances of 'int' and 'str'
 Checking job: salesforce-org
-⚠️ No builds found for job: salesforce-org
+⚠️ Error checking folder : '<' not supported between instances of 'int' and 'str'
 No jobs found missing Aqua stage!
