@@ -1,11 +1,28 @@
 import jenkins
 import csv
 import xml.etree.ElementTree as ET
+import requests
+import urllib3
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
+# Disable SSL warnings
+urllib3.disable_warnings(InsecureRequestWarning)
+
+# Patch requests session used by python-jenkins
+import jenkins
+original_init = jenkins.Jenkins.__init__
+
+def patched_init(self, url, username=None, password=None, timeout=10, ssl_verify=True):
+    original_init(self, url, username=username, password=password, timeout=timeout)
+    self._session.verify = False  # <--- this line disables SSL cert verification
+    self._session.headers.update({'User-Agent': 'python-jenkins'})
+
+jenkins.Jenkins.__init__ = patched_init
 
 # Jenkins config
-JENKINS_URL = 'http://localhost:8080/'
+JENKINS_URL = 'https://your-jenkins-url.com/'  # Replace with your actual URL
 USERNAME = 'devsecops'
-API_TOKEN = '11eca10940c16f371ded6738424553213f'
+API_TOKEN = 'your-api-token'  # Replace with actual token
 
 # Branches to scan
 TARGET_BRANCHES = ["main", "master", "dev", "qas", "prod"]
