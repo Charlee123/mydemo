@@ -1,118 +1,76 @@
-import jenkins
 import requests
+import urllib3
+import csv
+import os
 
-# Jenkins config
-JENKINS_URL = 'https://jenkins-ca-prod.global.iff.com/'
-USERNAME = 'test@gmail.com'
-PASSWORD = 'test'
+# Disable SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Connect to Jenkins with SSL verification disabled (using verify=False)
-server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=PASSWORD)
+# Jenkins settings
+JENKINS_URL = "https://your-jenkins-url"  # Change this
+USERNAME = "your-username"                # Change this
+API_TOKEN = "your-api-token"              # Change this
+auth = (USERNAME, API_TOKEN)
 
-# Disable SSL verification globally for requests made by the Jenkins client
-session = requests.Session()
-session.verify = False  # This disables SSL certificate verification for all requests
-server._session = session  # Assign this session to the Jenkins server instance
+# CSV output
+CSV_FILE = "jenkins_missing_aqua_stages.csv"
 
-def get_jobs_missing_aqua_stage():
-    missing_aqua_jobs = []
 
+def get_json(url):
     try:
-        # Fetch jobs directly from Jenkins
-        jobs = server.get_jobs()
-        print(f"🔍 Total jobs fetched: {len(jobs)}")  # Log total number of jobs
-
-        # Function to recursively check for jobs inside folders
-        def check_job_for_aqua(job_name):
-            try:
-                job_info = server.get_job_info(job_name)
-                builds = job_info.get('builds', [])
-                
-                if not builds:
-                    print(f"⚠️ No builds found for job: {job_name}")
-                    return False
-
-                # Now, checking for Aqua stage in the builds
-                aqua_stage_missing = True
-                for build in builds:
-                    build_info = server.get_build_info(job_name, build['number'])
-                    actions = build_info.get('actions', [])
-                    
-                    found_aqua = False
-                    for action in actions:
-                        if isinstance(action, dict):
-                            # Check for Aqua-related parameters in the actions
-                            if 'Aqua' in action.get('parameters', []):
-                                found_aqua = True
-                                break
-
-                    if found_aqua:
-                        aqua_stage_missing = False
-                        break
-
-                if aqua_stage_missing:
-                    missing_aqua_jobs.append(job_name)
-                    print(f"⚠️ Aqua stage missing for job: {job_name}")
-                return True
-
-            except Exception as e:
-                print(f"⚠️ Error checking job {job_name}: {e}")
-                return False
-
-        # Function to recursively check for sub-jobs inside folders
-        def check_folder_jobs(folder_path):
-            try:
-                folder_jobs = server.get_jobs(folder_path)
-                if not folder_jobs:
-                    print(f"⚠️ No jobs found inside folder {folder_path}")
-                    return
-                
-                for job in folder_jobs:
-                    job_name = job['name']
-                    if 'folder' in job.get('class', ''):
-                        # It's a folder, recursively check its contents
-                        print(f"🔍 Checking folder: {job_name}")
-                        check_folder_jobs(job_name)  # Recursively check the folder
-                    else:
-                        # It's a job, check it for Aqua stage
-                        print(f"Checking job: {job_name}")
-                        check_job_for_aqua(job_name)
-
-            except Exception as e:
-                print(f"⚠️ Error checking folder {folder_path}: {e}")
-
-        # Check all the top-level jobs and folders
-        for job in jobs:
-            job_name = job['name']
-            if 'folder' in job.get('class', ''):
-                print(f"🔍 Checking folder: {job_name}")
-                check_folder_jobs(job_name)  # Recursively check the folder
-            else:
-                # It's a direct job, check it for Aqua stage
-                print(f"Checking job: {job_name}")
-                check_job_for_aqua(job_name)
-
-        return missing_aqua_jobs
-
+        response = requests.get(f"{url}/api/json", auth=auth, verify=False)
+        response.raise_for_status()
+        return response.json()
     except Exception as e:
-        print(f"⚠️ Error fetching jobs: {e}")
-        return []
+        print(f"❌ Failed to fetch {url}: {e}")
+        return {}
+
+
+def find_jobs_missing_aqua(base_url, path=""):
+    missing_jobs = []
+    data = get_json(base_url)
+
+    jobs = data.get("jobs", [])
+    for job in jobs:
+        name = job.get("name")
+        _class = job.get("_class")
+        url = job.get("url")
+
+        if _class and "Folder" in _class:
+            # 📁 Recurse into folder
+            missing_jobs += find_jobs_missing_aqua(url, path + "/" + name)
+        elif _class and "WorkflowJob" in _class:
+            # 🧪 Pipeline job
+            config_url = f"{url}config.xml"
+            try:
+                response = requests.get(config_url, auth=auth, verify=False)
+                if "Aqua" not in response.text:
+                    print(f"🚫 Missing Aqua: {path}/{name}")
+                    missing_jobs.append({
+                        "folder": path.strip("/"),
+                        "job_name": name,
+                        "url": url
+                    })
+                else:
+                    print(f"✅ Has Aqua: {path}/{name}")
+            except Exception as e:
+                print(f"⚠️ Failed to get config for {name}: {e}")
+    return missing_jobs
+
+
+def save_to_csv(missing_jobs):
+    with open(CSV_FILE, mode="w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=["folder", "job_name", "url"])
+        writer.writeheader()
+        writer.writerows(missing_jobs)
+    print(f"\n📁 Saved {len(missing_jobs)} job(s) missing Aqua stage to: {CSV_FILE}")
+
 
 def main():
-    print("Fetching jobs from Jenkins...")
-    missing_aqua_jobs = get_jobs_missing_aqua_stage()
+    print("Fetching jobs from Jenkins...\n")
+    missing = find_jobs_missing_aqua(JENKINS_URL)
+    save_to_csv(missing)
 
-    if missing_aqua_jobs:
-        print(f"📁 Saving {len(missing_aqua_jobs)} jobs missing Aqua stage to: jenkins_missing_aqua_stages.csv")
-        # Save missing jobs to CSV file
-        with open('jenkins_missing_aqua_stages.csv', 'w') as f:
-            for job in missing_aqua_jobs:
-                f.write(f"{job}\n")
-        
-        # Send email notification if needed here (you can call your email function)
-        print(f"✅ Email sent successfully to ['sharear.ahmed@iff.com']")  # Placeholder for email
-    else:
-        print("No jobs found missing Aqua stage!")
 
 if __name__ == "__main__":
     main()
