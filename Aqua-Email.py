@@ -52,7 +52,7 @@ session = requests.Session()
 session.verify = False  # This disables SSL certificate verification for all requests
 server._session = session  # Assign this session to the Jenkins server instance
 
-# Recursively get all jobs (including nested folders)
+# Fetch all jobs and handle folder jobs explicitly
 def get_all_jobs():
     jobs = server.get_jobs()  # Fetch all jobs at the root level
     all_jobs = []
@@ -60,11 +60,11 @@ def get_all_jobs():
     for job in jobs:
         job_name = job['name']
         job_class = job['_class']
-        
+
         # If job is a folder, we skip it and handle folder jobs separately
         if job_class == 'com.cloudbees.hudson.plugins.folder.Folder':
-            subfolder_path = job_name
-            print(f"⚠️ Skipping folder: {subfolder_path}")  # Debugging folder processing
+            print(f"⚠️ Skipping folder: {job_name}")  # Debugging folder processing
+            continue  # Skip folders completely
         else:
             all_jobs.append({"name": job_name, "_class": job_class})
 
