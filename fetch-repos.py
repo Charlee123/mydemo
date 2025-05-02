@@ -129,7 +129,12 @@ for repo_name in tqdm(repo_list, desc="Fetching Repositories", unit="repo"):
             api_token = prompt_for_token()
             continue
         break
+    # Print to console
+    print(f"Repo Name: {repo_name} | Repository ID: {repo_id or 'N/A'} | Status: {message}")
+    
+    # Log result
     logging.info(f"Repo: {repo_name}, ID: {repo_id}, Status: {message}")
+
     results.append({
         'Repo Name': repo_name,
         'Repository ID': repo_id,
