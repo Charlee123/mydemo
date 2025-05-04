@@ -118,10 +118,48 @@ def check_aqua_stage(session, jenkins_url):
     return csv_filename if missing_aqua else None
 
 def send_email(csv_files):
-    """Send an email report with missing Aqua stages."""
+    """Send an email report with missing Aqua stages, with improved error handling."""
     if not csv_files:
         logging.info("✅ No missing Aqua stages detected in any Jenkins instance. Skipping email notification.")
         return
+
+    msg = MIMEMultipart()
+    msg["From"] = f"Jenkins Automation <{SENDER_EMAIL}>"
+    msg["To"] = ", ".join(RECIPIENT_EMAIL)
+    msg["Subject"] = "🚨 Jenkins Aqua Stage Missing Report"
+
+    body = "Hi Team,\n\nPlease find the attached reports of branches missing the Aqua Security Scan stage.\n\nThis is an automated email.\n\nThanks,\nDevSecOps Team"
+    msg.attach(MIMEText(body, "plain"))
+
+    for csv_file in csv_files:
+        try:
+            with open(csv_file, "rb") as file:
+                msg.attach(MIMEText(file.read(), "base64", "utf-8"))
+                msg.add_header("Content-Disposition", f'attachment; filename="{csv_file}"')
+        except Exception as e:
+            logging.error(f"⚠️ Error attaching file {csv_file}: {e}")
+
+    try:
+        logging.info("📧 Establishing SMTP connection...")
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            
+            try:
+                logging.info("🔑 Logging into SMTP server...")
+                server.login(SENDER_EMAIL, APP_PASSWORD)
+            except smtplib.SMTPAuthenticationError:
+                logging.error("❌ SMTP authentication failed! Check your email credentials.")
+                return
+
+            try:
+                logging.info(f"📤 Sending email to {RECIPIENT_EMAIL}...")
+                server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
+                logging.info("✅ Email sent successfully!")
+            except smtplib.SMTPException as e:
+                logging.error(f"⚠️ Failed to send email: {e}")
+
+    except Exception as e:
+        logging.error(f"⚠️ SMTP connection error: {e}")
 
     msg = MIMEMultipart()
     msg["From"] = f"Jenkins Automation <{SENDER_EMAIL}>"
