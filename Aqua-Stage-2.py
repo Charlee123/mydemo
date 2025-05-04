@@ -26,15 +26,16 @@ session.auth = (USERNAME, PASSWORD)
 session.verify = False  # ✅ Ignore SSL certificate errors
 session.headers.update({"Accept": "application/json"})
 
-# 🔹 Fetch Jenkins CSRF token (Crumb)
-try:
-    logging.info("🔍 Fetching CSRF protection token...")
-    crumb_response = session.get(f"{JENKINS_URL}/crumbIssuer/api/json", verify=False)
-    crumb_token = crumb_response.json().get("crumb")
-    session.headers.update({"Jenkins-Crumb": crumb_token})
-    logging.info(f"✅ CSRF Token Acquired: {crumb_token}")
-except Exception as e:
-    logging.error(f"⚠️ Failed to fetch CSRF Token: {e}")
+def get_crumb():
+    """Fetch a fresh CSRF crumb before every API call."""
+    try:
+        logging.info("🔍 Fetching new CSRF protection token...")
+        crumb_response = session.get(f"{JENKINS_URL}/crumbIssuer/api/json", verify=False)
+        crumb_token = crumb_response.json().get("crumb")
+        session.headers.update({"Jenkins-Crumb": crumb_token})
+        logging.info(f"✅ New CSRF Token Acquired: {crumb_token}")
+    except Exception as e:
+        logging.error(f"⚠️ Failed to fetch CSRF Token: {e}")
 
 # 🔹 SMTP config (for sending reports)
 SENDER_EMAIL = 'your-email@gmail.com'
@@ -54,7 +55,8 @@ def get_application_jobs():
     """Retrieve jobs inside the 'application' folder only"""
     application_folder = "application"  # Target folder name
     logging.info(f"🔍 Scanning jobs inside folder: {application_folder}")
-
+    
+    get_crumb()  # Fetch fresh CSRF token before making the request
     jobs = server.get_jobs(application_folder)  # Fetch jobs inside 'application'
     all_jobs = []
 
@@ -63,6 +65,7 @@ def get_application_jobs():
         job_class = job['_class']
 
         if 'folder' in job_class:  # Navigate inside subfolders if necessary
+            get_crumb()  # Fetch new CSRF token for subfolder request
             sub_jobs = server.get_jobs(f"{application_folder}/{name}")
             for sub_job in sub_jobs:
                 all_jobs.append({"name": f"{application_folder}/{name}/{sub_job['name']}", "_class": sub_job["_class"]})
@@ -82,6 +85,7 @@ def check_aqua_stage():
         logging.info(f"🔎 Checking job: {job_name}")
 
         if 'multibranch' in job["_class"]:
+            get_crumb()  # Fetch fresh CSRF token for each request
             branches = server.get_job_info(job_name)['jobs']
 
             for branch in branches:
@@ -92,6 +96,7 @@ def check_aqua_stage():
                     continue
 
                 try:
+                    get_crumb()  # Fetch fresh CSRF token for each branch request
                     branch_builds = server.get_job_info(f"{job_name}/{branch_name}")['builds']
                     valid_builds = [b for b in branch_builds if isinstance(b.get('number'), int)]
                     sorted_builds = sorted(valid_builds, key=lambda b: b['number'], reverse=True)
@@ -99,6 +104,7 @@ def check_aqua_stage():
                     for build in sorted_builds[:5]:  # Check last 5 builds
                         build_number = build['number']
                         logging.info(f"📜 Fetching console log for Build {build_number} in {branch_name}")
+                        get_crumb()  # Fetch fresh CSRF token before fetching logs
                         console_output = server.get_build_console_output(f"{job_name}/{branch_name}", build_number)
 
                         if "Aqua Security Scan" in console_output:
@@ -110,26 +116,6 @@ def check_aqua_stage():
 
                 except Exception as e:
                     logging.error(f"⚠️ Error checking branch {branch_name} of {job_name}: {e}")
-        else:
-            try:
-                job_builds = server.get_job_info(job_name)['builds']
-                valid_builds = [b for b in job_builds if isinstance(b.get('number'), int)]
-                sorted_builds = sorted(valid_builds, key=lambda b: b['number'], reverse=True)
-
-                for build in sorted_builds[:5]:  # Check last 5 builds
-                    build_number = build['number']
-                    logging.info(f"📜 Fetching console log for Build {build_number} in {job_name}")
-                    console_output = server.get_build_console_output(job_name, build_number)
-
-                    if "Aqua Security Scan" in console_output:
-                        logging.info(f"✅ Aqua detected in: {job_name} (Build {build_number})")
-                        break
-                else:
-                    logging.warning(f"❌ Aqua stage missing in all recent builds: {job_name}")
-                    missing_aqua.append({"Project Name": job_name, "Branch Name": "N/A"})
-
-            except Exception as e:
-                logging.error(f"⚠️ Error checking job {job_name}: {e}")
 
     # 🔹 Write only missing Aqua jobs to CSV
     if missing_aqua:
