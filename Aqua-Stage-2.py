@@ -20,11 +20,21 @@ JENKINS_URL = 'https://your-office-jenkins-url/'  # Ensure HTTPS is used
 USERNAME = 'your-username'
 PASSWORD = 'your-password'  # ✅ Using password-based authentication
 
-# 🔹 Configure Jenkins API Session
+# 🔹 Configure Jenkins API Session (Disable SSL verification)
 session = requests.Session()
 session.auth = (USERNAME, PASSWORD)
 session.verify = False  # ✅ Ignore SSL certificate errors
 session.headers.update({"Accept": "application/json"})
+
+# 🔹 Fetch Jenkins CSRF token (Crumb)
+try:
+    logging.info("🔍 Fetching CSRF protection token...")
+    crumb_response = session.get(f"{JENKINS_URL}/crumbIssuer/api/json", verify=False)
+    crumb_token = crumb_response.json().get("crumb")
+    session.headers.update({"Jenkins-Crumb": crumb_token})
+    logging.info(f"✅ CSRF Token Acquired: {crumb_token}")
+except Exception as e:
+    logging.error(f"⚠️ Failed to fetch CSRF Token: {e}")
 
 # 🔹 SMTP config (for sending reports)
 SENDER_EMAIL = 'your-email@gmail.com'
