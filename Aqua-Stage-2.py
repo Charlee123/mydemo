@@ -1,4 +1,3 @@
-import jenkins
 import csv
 import smtplib
 import logging
@@ -37,43 +36,22 @@ def get_crumb():
     except Exception as e:
         logging.error(f"⚠️ Failed to fetch CSRF Token: {e}")
 
-# 🔹 SMTP config (for sending reports)
-SENDER_EMAIL = 'your-email@gmail.com'
-APP_PASSWORD = 'your-app-password'
-RECIPIENT_EMAIL = ['your-team@company.com']
-SMTP_SERVER = 'smtp.gmail.com'
-SMTP_PORT = 587
-
-# 🔹 Branch keyword matching (handles dynamic names)
-TARGET_BRANCHES = ["main", "master", "dev", "qas", "prod"]
-ATTACHMENT_FILE = "jenkins_missing_aqua_stages.csv"
-
-# 🔹 Connect to Jenkins using **USERNAME + PASSWORD**
-server = jenkins.Jenkins(JENKINS_URL, username=USERNAME, password=PASSWORD)
-
 def get_application_jobs():
     """Retrieve jobs inside the 'application' folder only"""
     application_folder = "application"  # Target folder name
     logging.info(f"🔍 Scanning jobs inside folder: {application_folder}")
     
     get_crumb()  # Fetch fresh CSRF token before making the request
-    jobs = server.get_jobs(application_folder)  # Fetch jobs inside 'application'
-    all_jobs = []
-
-    for job in jobs:
-        name = job['name']
-        job_class = job['_class']
-
-        if 'folder' in job_class:  # Navigate inside subfolders if necessary
-            get_crumb()  # Fetch new CSRF token for subfolder request
-            sub_jobs = server.get_jobs(f"{application_folder}/{name}")
-            for sub_job in sub_jobs:
-                all_jobs.append({"name": f"{application_folder}/{name}/{sub_job['name']}", "_class": sub_job["_class"]})
-        else:
-            all_jobs.append({"name": f"{application_folder}/{name}", "_class": job_class})
-
-    logging.info(f"✅ Found {len(all_jobs)} jobs in '{application_folder}' folder.")
-    return all_jobs
+    response = session.get(f"{JENKINS_URL}/job/{application_folder}/api/json", verify=False)
+    
+    if response.status_code == 200:
+        jobs_data = response.json().get("jobs", [])
+        all_jobs = [{"name": job["name"], "url": job["url"]} for job in jobs_data]
+        logging.info(f"✅ Found {len(all_jobs)} jobs in '{application_folder}' folder.")
+        return all_jobs
+    else:
+        logging.error(f"⚠️ Failed to retrieve jobs: {response.status_code}")
+        return []
 
 def check_aqua_stage():
     """Check if Aqua Security Scan is present in console output"""
@@ -82,54 +60,49 @@ def check_aqua_stage():
 
     for job in all_jobs:
         job_name = job["name"]
+        job_url = job["url"]
         logging.info(f"🔎 Checking job: {job_name}")
 
-        if 'multibranch' in job["_class"]:
-            get_crumb()  # Fetch fresh CSRF token for each request
-            branches = server.get_job_info(job_name)['jobs']
+        get_crumb()  # Fetch fresh CSRF token for each job request
+        response = session.get(f"{job_url}/api/json", verify=False)
 
-            for branch in branches:
-                branch_name = branch['name']
+        if response.status_code == 200:
+            job_data = response.json()
+            if "builds" in job_data:
+                builds = job_data["builds"][:5]  # Check last 5 builds
 
-                # Check if branch name contains any target keyword
-                if not any(keyword in branch_name for keyword in TARGET_BRANCHES):
-                    continue
+                for build in builds:
+                    build_number = build["number"]
+                    logging.info(f"📜 Fetching console log for Build {build_number} in {job_name}")
+                    get_crumb()  # Fetch fresh CSRF token before fetching logs
+                    console_response = session.get(f"{job_url}/{build_number}/consoleText", verify=False)
 
-                try:
-                    get_crumb()  # Fetch fresh CSRF token for each branch request
-                    branch_builds = server.get_job_info(f"{job_name}/{branch_name}")['builds']
-                    valid_builds = [b for b in branch_builds if isinstance(b.get('number'), int)]
-                    sorted_builds = sorted(valid_builds, key=lambda b: b['number'], reverse=True)
-
-                    for build in sorted_builds[:5]:  # Check last 5 builds
-                        build_number = build['number']
-                        logging.info(f"📜 Fetching console log for Build {build_number} in {branch_name}")
-                        get_crumb()  # Fetch fresh CSRF token before fetching logs
-                        console_output = server.get_build_console_output(f"{job_name}/{branch_name}", build_number)
-
+                    if console_response.status_code == 200:
+                        console_output = console_response.text
                         if "Aqua Security Scan" in console_output:
-                            logging.info(f"✅ Aqua detected in: {job_name} -> {branch_name} (Build {build_number})")
+                            logging.info(f"✅ Aqua detected in: {job_name} (Build {build_number})")
                             break
                     else:
-                        logging.warning(f"❌ Aqua stage missing in all recent builds: {job_name} -> {branch_name}")
-                        missing_aqua.append({"Project Name": job_name, "Branch Name": branch_name})
-
-                except Exception as e:
-                    logging.error(f"⚠️ Error checking branch {branch_name} of {job_name}: {e}")
+                        logging.warning(f"⚠️ Failed to retrieve console output for Build {build_number}")
+                else:
+                    logging.warning(f"❌ Aqua stage missing in all recent builds: {job_name}")
+                    missing_aqua.append({"Project Name": job_name, "Branch Name": "N/A"})
+        else:
+            logging.error(f"⚠️ Failed to retrieve job info for {job_name}")
 
     # 🔹 Write only missing Aqua jobs to CSV
     if missing_aqua:
-        with open(ATTACHMENT_FILE, mode='w', newline='', encoding='utf-8') as file:
+        with open("jenkins_missing_aqua_stages.csv", mode='w', newline='', encoding='utf-8') as file:
             writer = csv.DictWriter(file, fieldnames=["Project Name", "Branch Name"])
             writer.writeheader()
             writer.writerows(missing_aqua)
-        logging.info(f"\n📁 Saved {len(missing_aqua)} job(s) missing Aqua stage to: {ATTACHMENT_FILE}")
+        logging.info(f"\n📁 Saved {len(missing_aqua)} job(s) missing Aqua stage to: jenkins_missing_aqua_stages.csv")
     else:
         logging.info("✅ All branches have Aqua Security Scan. No CSV generated.")
 
 def send_email():
     """Send an email report with missing Aqua stages"""
-    if not os.path.exists(ATTACHMENT_FILE):
+    if not os.path.exists("jenkins_missing_aqua_stages.csv"):
         logging.info("✅ No missing Aqua stages detected. Skipping email notification.")
         return
 
@@ -141,9 +114,9 @@ def send_email():
     body = "Hi Team,\n\nPlease find the attached report of branches missing the Aqua Security Scan stage.\n\nThis is an automated email.\n\nThanks,\nDevSecOps Team"
     msg.attach(MIMEText(body, 'plain'))
 
-    with open(ATTACHMENT_FILE, 'rb') as file:
+    with open("jenkins_missing_aqua_stages.csv", 'rb') as file:
         msg.attach(MIMEText(file.read(), 'base64', 'utf-8'))
-        msg.add_header('Content-Disposition', f'attachment; filename="{ATTACHMENT_FILE}"')
+        msg.add_header('Content-Disposition', 'attachment; filename="jenkins_missing_aqua_stages.csv"')
 
     try:
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
