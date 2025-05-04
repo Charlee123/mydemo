@@ -25,6 +25,13 @@ session.auth = (USERNAME, PASSWORD)
 session.verify = False  # ✅ Ignore SSL certificate errors
 session.headers.update({"Accept": "application/json"})
 
+# 🔹 SMTP config for sending reports
+SENDER_EMAIL = 'your-email@gmail.com'
+APP_PASSWORD = 'your-app-password'  # ✅ Use app password or email authentication
+RECIPIENT_EMAIL = ['your-team@company.com']
+SMTP_SERVER = 'smtp.gmail.com'
+SMTP_PORT = 587
+
 def get_crumb():
     """Fetch a fresh CSRF crumb before every API call."""
     try:
