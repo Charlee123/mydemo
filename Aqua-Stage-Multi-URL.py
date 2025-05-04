@@ -26,6 +26,12 @@ JENKINS_URLS = [
 USERNAME = "your-username"
 PASSWORD = "your-password"
 
+# 🔹 Configure Jenkins API Session (Disable SSL verification)
+session = requests.Session()
+session.auth = (USERNAME, PASSWORD)
+session.verify = False  # ✅ Ignore SSL certificate errors
+session.headers.update({"Accept": "application/json"})
+
 # 🔹 SMTP config for sending reports
 SENDER_EMAIL = "your-email@gmail.com"
 APP_PASSWORD = "your-app-password"
