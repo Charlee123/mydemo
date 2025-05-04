@@ -3,12 +3,14 @@ import csv
 import smtplib
 import logging
 import ssl
+import requests
+import urllib3
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import os
 
-# 🔹 Ignore SSL certificate errors
-ssl._create_default_https_context = ssl._create_unverified_context
+# 🔹 Suppress SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 🔹 Enable logging for debug output
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,7 +18,13 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # 🔹 Jenkins config (USERNAME + PASSWORD authentication)
 JENKINS_URL = 'https://your-office-jenkins-url/'  # Ensure HTTPS is used
 USERNAME = 'your-username'
-PASSWORD = 'your-password'  # ✅ Updated to use password
+PASSWORD = 'your-password'  # ✅ Using password-based authentication
+
+# 🔹 Configure Jenkins API Session
+session = requests.Session()
+session.auth = (USERNAME, PASSWORD)
+session.verify = False  # ✅ Ignore SSL certificate errors
+session.headers.update({"Accept": "application/json"})
 
 # 🔹 SMTP config (for sending reports)
 SENDER_EMAIL = 'your-email@gmail.com'
@@ -36,7 +44,7 @@ def get_application_jobs():
     """Retrieve jobs inside the 'application' folder only"""
     application_folder = "application"  # Target folder name
     logging.info(f"🔍 Scanning jobs inside folder: {application_folder}")
-    
+
     jobs = server.get_jobs(application_folder)  # Fetch jobs inside 'application'
     all_jobs = []
 
