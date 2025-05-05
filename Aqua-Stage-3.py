@@ -3,7 +3,6 @@ import smtplib
 import logging
 import requests
 import urllib3
-import concurrent.futures
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import os
@@ -12,7 +11,7 @@ import os
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 🔹 Optimize logging level to reduce unnecessary outputs
-logging.basicConfig(level=logging.WARNING, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # 🔹 Jenkins Configuration
 JENKINS_URL = "https://your-office-jenkins-url/"
@@ -57,54 +56,58 @@ def get_application_jobs():
     logging.error("⚠️ Failed to retrieve jobs.")
     return []
 
-def check_aqua_stage_for_job(job):
-    """Check if Aqua Code Scan is present for a single job."""
-    job_name = job["name"]
-    job_url = job["url"]
-
-    get_crumb()
-    response = session.get(f"{job_url}/api/json", verify=False)
-
-    if response.status_code == 200:
-        job_data = response.json()
-        builds = job_data.get("builds", [])
-
-        if not builds:
-            logging.warning(f"🚫 No builds for {job_name}, skipping log check.")
-            return None
-
-        for build in builds[:3]:  # Check only latest 3 builds
-            console_response = session.get(f"{job_url}/{build['number']}/consoleText", verify=False)
-            if console_response.status_code == 200 and "Aqua Code Scan" in console_response.text:
-                return None
-        return {"Project Name": job_name, "Branch Name": "N/A"}
-
-    logging.warning(f"⚠️ Failed to retrieve job info for {job_name}")
-    return None
-
 def check_aqua_stage():
-    """Check Aqua Code Scan in parallel for all jobs."""
+    """Check Aqua Code Scan stage and success criteria for all jobs, sequentially."""
     all_jobs = get_application_jobs()
     missing_aqua = []
 
     total_jobs = len(all_jobs)
     completed_jobs = 0
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:  # Run 10 jobs in parallel
-        future_to_job = {executor.submit(check_aqua_stage_for_job, job): job for job in all_jobs}
+    for job in all_jobs:
+        job_name = job["name"]
+        job_url = job["url"]
 
-        for future in concurrent.futures.as_completed(future_to_job):
-            result = future.result()
-            completed_jobs += 1
-            print(f"✅ Completed {completed_jobs}/{total_jobs} jobs", end="\r")  # Live update in terminal
-            if result:
-                missing_aqua.append(result)
+        get_crumb()
+        response = session.get(f"{job_url}/api/json", verify=False)
+
+        if response.status_code == 200:
+            job_data = response.json()
+            builds = job_data.get("builds", [])
+
+            if not builds:
+                logging.warning(f"🚫 No builds for {job_name}, skipping log check.")
+                missing_aqua.append({"Project Name": job_name, "Reason": "No Aqua Stage Found"})
+                completed_jobs += 1
+                print(f"✅ Completed {completed_jobs}/{total_jobs} jobs", end="\r")  # Live update in terminal
+                continue
+
+            for build in builds[:3]:  # Check latest 3 builds only
+                console_response = session.get(f"{job_url}/{build['number']}/consoleText", verify=False)
+
+                if console_response.status_code == 200:
+                    console_output = console_response.text
+                    if "Aqua Security Scan" in console_output:
+                        if "Scan Results Summary" in console_output or "Successfully processed file 'results.json'" in console_output:
+                            break  # ✅ Aqua scan exists and succeeded
+                        else:
+                            missing_aqua.append({"Project Name": job_name, "Reason": "Aqua Scan was not successful"})
+                            break
+            else:
+                missing_aqua.append({"Project Name": job_name, "Reason": "No Aqua Stage Found"})
+
+        else:
+            logging.warning(f"⚠️ Failed to retrieve job info for {job_name}")
+            missing_aqua.append({"Project Name": job_name, "Reason": "Failed to retrieve job data"})
+
+        completed_jobs += 1
+        print(f"✅ Completed {completed_jobs}/{total_jobs} jobs", end="\r")  # Live update in terminal
 
     print("\n🎯 Processing complete.")
 
     if missing_aqua:
         with open("jenkins_missing_aqua_stages.csv", mode="w", newline="", encoding="utf-8") as file:
-            writer = csv.DictWriter(file, fieldnames=["Project Name", "Branch Name"])
+            writer = csv.DictWriter(file, fieldnames=["Project Name", "Reason"])
             writer.writeheader()
             writer.writerows(missing_aqua)
         logging.warning(f"\n📁 Saved {len(missing_aqua)} missing Aqua jobs to CSV.")
