@@ -1,99 +1,119 @@
 import csv
 import smtplib
 import logging
-import asyncio
-import aiohttp
 import ssl
-import os
+import requests
+import urllib3
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import os
 
-# Suppress SSL warnings
-ssl._create_default_https_context = ssl._create_unverified_context
+# 🔹 Suppress SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Enable logging for debugging
+# 🔹 Enable logging for debugging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Jenkins Configuration
+# 🔹 Jenkins Configuration
 JENKINS_URL = "https://your-office-jenkins-url/"
 USERNAME = "your-username"
 PASSWORD = "your-password"
 
-# SMTP configuration
+# 🔹 Configure Jenkins API Session
+session = requests.Session()
+session.auth = (USERNAME, PASSWORD)
+session.verify = False
+session.headers.update({"Accept": "application/json"})
+
+# 🔹 SMTP configuration
 SENDER_EMAIL = "your-email@gmail.com"
 APP_PASSWORD = "your-app-password"
 RECIPIENT_EMAIL = ["your-team@company.com"]
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
-async def get_crumb(session):
+def get_crumb():
     """Fetch a fresh CSRF crumb before API calls."""
     try:
         logging.info("🔍 Fetching CSRF protection token...")
-        async with session.get(f"{JENKINS_URL}/crumbIssuer/api/json") as response:
-            if response.status == 200:
-                data = await response.json()
-                return data.get("crumb")
-            else:
-                logging.error(f"⚠️ Failed to fetch CSRF Token: {response.status}")
-                return None
+        crumb_response = session.get(f"{JENKINS_URL}/crumbIssuer/api/json", verify=False)
+        if crumb_response.status_code == 200:
+            crumb_token = crumb_response.json().get("crumb")
+            session.headers.update({"Jenkins-Crumb": crumb_token})
+            logging.info(f"✅ CSRF Token Acquired: {crumb_token}")
+        else:
+            logging.error(f"⚠️ Failed to fetch CSRF Token: {crumb_response.status_code}")
     except Exception as e:
         logging.error(f"⚠️ Error fetching CSRF Token: {e}")
-        return None
 
-async def get_application_jobs(session, csrf_token):
+def get_application_jobs():
     """Retrieve jobs from the 'application' folder."""
     application_folder = "application"
     logging.info(f"🔍 Scanning jobs inside folder: {application_folder}")
 
-    headers = {"Jenkins-Crumb": csrf_token} if csrf_token else {}
+    get_crumb()
+    response = session.get(f"{JENKINS_URL}/job/{application_folder}/api/json", verify=False)
 
-    async with session.get(f"{JENKINS_URL}/job/{application_folder}/api/json", headers=headers) as response:
-        if response.status == 200:
-            data = await response.json()
-            all_jobs = [{"name": job["name"], "url": job["url"]} for job in data.get("jobs", [])]
-            logging.info(f"✅ Found {len(all_jobs)} jobs in '{application_folder}' folder.")
-            return all_jobs
+    if response.status_code == 200:
+        jobs_data = response.json().get("jobs", [])
+        all_jobs = [{"name": job["name"], "url": job["url"]} for job in jobs_data]
+        logging.info(f"✅ Found {len(all_jobs)} jobs in '{application_folder}' folder.")
+        return all_jobs
+    else:
+        logging.error(f"⚠️ Failed to retrieve jobs: {response.status_code}")
+        return []
+
+def check_aqua_stage():
+    """Check for Aqua Security Scan, but skip log retrieval if no builds exist."""
+    all_jobs = get_application_jobs()
+    missing_aqua = []
+
+    for job in all_jobs:
+        job_name = job["name"]
+        job_url = job["url"]
+        logging.info(f"🔎 Checking job: {job_name}")
+
+        get_crumb()
+        response = session.get(f"{job_url}/api/json", verify=False)
+
+        if response.status_code == 200:
+            job_data = response.json()
+            builds = job_data.get("builds", [])
+
+            if not builds:
+                logging.info(f"🚫 No builds found for {job_name}, skipping log check.")
+                continue  # **Skip log retrieval entirely for projects with no builds**
+
+            for build in builds[:5]:  # Check last 5 builds
+                build_number = build["number"]
+                logging.info(f"📜 Fetching console log for Build {build_number} in {job_name}")
+                get_crumb()
+                console_response = session.get(f"{job_url}/{build_number}/consoleText", verify=False)
+
+                if console_response.status_code == 200:
+                    console_output = console_response.text
+                    if "Aqua Security Scan" in console_output:
+                        logging.info(f"✅ Aqua detected in: {job_name} (Build {build_number})")
+                        break
+                else:
+                    logging.warning(f"⚠️ Failed to retrieve console output for Build {build_number}")
+            else:
+                logging.warning(f"❌ Aqua stage missing in all recent builds: {job_name}")
+                missing_aqua.append({"Project Name": job_name, "Branch Name": "N/A"})
         else:
-            logging.error(f"⚠️ Failed to retrieve jobs: {response.status}")
-            return []
+            logging.error(f"⚠️ Failed to retrieve job info for {job_name}")
 
-async def fetch_job_data(session, job, csrf_token):
-    """Retrieve recent builds and check for Aqua Security Scan."""
-    headers = {"Jenkins-Crumb": csrf_token} if csrf_token else {}
+    # 🔹 Write only missing Aqua jobs to CSV
+    if missing_aqua:
+        with open("jenkins_missing_aqua_stages.csv", mode="w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=["Project Name", "Branch Name"])
+            writer.writeheader()
+            writer.writerows(missing_aqua)
+        logging.info(f"\n📁 Saved {len(missing_aqua)} job(s) missing Aqua stage to: jenkins_missing_aqua_stages.csv")
+    else:
+        logging.info("✅ All branches have Aqua Security Scan. No CSV generated.")
 
-    async with session.get(f"{job['url']}/api/json", headers=headers) as response:
-        if response.status == 200:
-            job_data = await response.json()
-            for build in job_data.get("builds", [])[:1]:  # Check only latest build
-                async with session.get(f"{build['url']}/consoleText", headers=headers) as console_response:
-                    if console_response.status == 200:
-                        console_text = await console_response.text()
-                        if "Aqua Security Scan" in console_text:
-                            return None
-        return {"Project Name": job["name"], "Branch Name": "N/A"}
-
-async def check_aqua_stage():
-    """Run parallel async requests to check for missing Aqua Security Scan."""
-    async with aiohttp.ClientSession(auth=aiohttp.BasicAuth(USERNAME, PASSWORD), connector=aiohttp.TCPConnector(ssl=False)) as session:
-        csrf_token = await get_crumb(session)
-        all_jobs = await get_application_jobs(session, csrf_token)
-
-        tasks = [fetch_job_data(session, job, csrf_token) for job in all_jobs]
-        results = await asyncio.gather(*tasks)
-
-        missing_aqua = [job for job in results if job]
-
-        if missing_aqua:
-            with open("jenkins_missing_aqua_stages.csv", mode="w", newline="", encoding="utf-8") as file:
-                writer = csv.DictWriter(file, fieldnames=["Project Name", "Branch Name"])
-                writer.writeheader()
-                writer.writerows(missing_aqua)
-            logging.info(f"\n📁 Saved {len(missing_aqua)} job(s) missing Aqua stage to: jenkins_missing_aqua_stages.csv")
-        else:
-            logging.info("✅ All branches have Aqua Security Scan. No CSV generated.")
-
-async def send_email():
+def send_email():
     """Send an email report with missing Aqua stages."""
     if not os.path.exists("jenkins_missing_aqua_stages.csv"):
         logging.info("✅ No missing Aqua stages detected. Skipping email notification.")
@@ -121,9 +141,6 @@ async def send_email():
     except Exception as e:
         logging.error(f"⚠️ Failed to send email: {e}")
 
-async def main():
-    await check_aqua_stage()
-    await send_email()
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    check_aqua_stage()
+    send_email()
