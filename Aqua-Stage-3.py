@@ -57,9 +57,12 @@ def get_application_jobs():
     return []
 
 def check_aqua_stage():
-    """Check if Aqua Security Scan is present in console output, skipping projects with no builds."""
+    """Check for Aqua Code Scan, skipping projects with no builds, and show progress."""
     all_jobs = get_application_jobs()
     missing_aqua = []
+    
+    total_jobs = len(all_jobs)
+    completed_jobs = 0
 
     for job in all_jobs:
         job_name = job["name"]
@@ -74,18 +77,20 @@ def check_aqua_stage():
 
             if not builds:
                 logging.warning(f"🚫 No builds for {job_name}, skipping log check.")
-                continue  # **Skip log check for projects without builds**
+                completed_jobs += 1
+                continue
 
             for build in builds[:3]:  # Reduced checks to 3 latest builds for efficiency
                 console_response = session.get(f"{job_url}/{build['number']}/consoleText", verify=False)
-
-                if console_response.status_code == 200:
-                    if "Aqua Security Scan" in console_response.text:
-                        break
-                else:
-                    logging.warning(f"⚠️ Failed to retrieve console for {job_name}")
+                if console_response.status_code == 200 and "Aqua Code Scan" in console_response.text:
+                    break
             else:
                 missing_aqua.append({"Project Name": job_name, "Branch Name": "N/A"})
+
+        completed_jobs += 1
+        print(f"✅ Completed {completed_jobs}/{total_jobs} jobs", end="\r")  # Live update in terminal
+    
+    print("\n🎯 Processing complete.")
 
     if missing_aqua:
         with open("jenkins_missing_aqua_stages.csv", mode="w", newline="", encoding="utf-8") as file:
@@ -94,20 +99,20 @@ def check_aqua_stage():
             writer.writerows(missing_aqua)
         logging.warning(f"\n📁 Saved {len(missing_aqua)} missing Aqua jobs to CSV.")
     else:
-        logging.info("✅ All jobs contain Aqua Security Scan.")
+        logging.info("✅ All jobs contain Aqua Code Scan.")
 
 def send_email():
-    """Send an email report with missing Aqua stages."""
+    """Send an email report with missing Aqua Code Scan."""
     if not os.path.exists("jenkins_missing_aqua_stages.csv"):
-        logging.info("✅ No missing Aqua stages detected. Skipping email notification.")
+        logging.info("✅ No missing Aqua Code Scan detected. Skipping email notification.")
         return
 
     msg = MIMEMultipart()
     msg["From"] = f"Jenkins Automation <{SENDER_EMAIL}>"
     msg["To"] = ", ".join(RECIPIENT_EMAIL)
-    msg["Subject"] = "🚨 Jenkins Aqua Stage Missing Report"
+    msg["Subject"] = "🚨 Jenkins Aqua Code Scan Missing Report"
 
-    body = "Hi Team,\n\nFind the attached report of branches missing the Aqua Security Scan stage.\n\nAutomated email.\n\nThanks,\nDevSecOps Team"
+    body = "Hi Team,\n\nFind the attached report of branches missing the Aqua Code Scan stage.\n\nAutomated email.\n\nThanks,\nDevSecOps Team"
     msg.attach(MIMEText(body, "plain"))
 
     with open("jenkins_missing_aqua_stages.csv", "rb") as file:
