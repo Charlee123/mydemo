@@ -3,6 +3,7 @@ import smtplib
 import logging
 import requests
 import urllib3
+import concurrent.futures
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import os
@@ -56,40 +57,49 @@ def get_application_jobs():
     logging.error("⚠️ Failed to retrieve jobs.")
     return []
 
+def check_aqua_stage_for_job(job):
+    """Check if Aqua Code Scan is present for a single job."""
+    job_name = job["name"]
+    job_url = job["url"]
+
+    get_crumb()
+    response = session.get(f"{job_url}/api/json", verify=False)
+
+    if response.status_code == 200:
+        job_data = response.json()
+        builds = job_data.get("builds", [])
+
+        if not builds:
+            logging.warning(f"🚫 No builds for {job_name}, skipping log check.")
+            return None
+
+        for build in builds[:3]:  # Check only latest 3 builds
+            console_response = session.get(f"{job_url}/{build['number']}/consoleText", verify=False)
+            if console_response.status_code == 200 and "Aqua Code Scan" in console_response.text:
+                return None
+        return {"Project Name": job_name, "Branch Name": "N/A"}
+
+    logging.warning(f"⚠️ Failed to retrieve job info for {job_name}")
+    return None
+
 def check_aqua_stage():
-    """Check for Aqua Code Scan, skipping projects with no builds, and show progress."""
+    """Check Aqua Code Scan in parallel for all jobs."""
     all_jobs = get_application_jobs()
     missing_aqua = []
-    
+
     total_jobs = len(all_jobs)
     completed_jobs = 0
 
-    for job in all_jobs:
-        job_name = job["name"]
-        job_url = job["url"]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:  # Run 10 jobs in parallel
+        future_to_job = {executor.submit(check_aqua_stage_for_job, job): job for job in all_jobs}
 
-        get_crumb()
-        response = session.get(f"{job_url}/api/json", verify=False)
+        for future in concurrent.futures.as_completed(future_to_job):
+            result = future.result()
+            completed_jobs += 1
+            print(f"✅ Completed {completed_jobs}/{total_jobs} jobs", end="\r")  # Live update in terminal
+            if result:
+                missing_aqua.append(result)
 
-        if response.status_code == 200:
-            job_data = response.json()
-            builds = job_data.get("builds", [])
-
-            if not builds:
-                logging.warning(f"🚫 No builds for {job_name}, skipping log check.")
-                completed_jobs += 1
-                continue
-
-            for build in builds[:3]:  # Reduced checks to 3 latest builds for efficiency
-                console_response = session.get(f"{job_url}/{build['number']}/consoleText", verify=False)
-                if console_response.status_code == 200 and "Aqua Code Scan" in console_response.text:
-                    break
-            else:
-                missing_aqua.append({"Project Name": job_name, "Branch Name": "N/A"})
-
-        completed_jobs += 1
-        print(f"✅ Completed {completed_jobs}/{total_jobs} jobs", end="\r")  # Live update in terminal
-    
     print("\n🎯 Processing complete.")
 
     if missing_aqua:
