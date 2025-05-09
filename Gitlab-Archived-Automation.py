@@ -7,7 +7,7 @@ from tqdm import tqdm
 # GitLab Connection Setup
 # -----------------------------
 GITLAB_URL = 'https://gitlab.com'
-ACCESS_TOKEN = 'glpat-wJXweM94RF94Vbd-e9xy'  # Personal Access Token (not username/password)
+ACCESS_TOKEN = 'test'  # Personal Access Token (not username/password)
 
 gl = gitlab.Gitlab(GITLAB_URL, private_token=ACCESS_TOKEN)
 
