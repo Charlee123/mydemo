@@ -11,8 +11,8 @@ warnings.simplefilter('ignore', InsecureRequestWarning)
 # -----------------------------
 # Aqua Security API Setup
 # -----------------------------
-AQUA_API_URL = 'https://codesec.aquasec.com'  # Replace with your Aqua API URL
-AQUA_API_INFO = 'https://api.supply-chain.cloud.aquasec.com'
+AQUA_API_URL = 'https://test.aquasec.com'  # Replace with your Aqua API URL
+AQUA_API_INFO = 'https://test.cloud.aquasec.com'
 
 def get_headers(api_token):
     return {
