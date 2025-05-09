@@ -2,7 +2,7 @@ import jenkins
 import requests
 
 # Jenkins config
-JENKINS_URL = 'https://jenkins-ca-prod.global.iff.com/'
+JENKINS_URL = 'https://jenkins-prod.com/'
 USERNAME = 'test@gmail.com'
 PASSWORD = 'test'
 
