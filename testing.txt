@@ -7,3 +7,6 @@ Checking job: infrastructure
 Checking job: salesforce-org
 ⚠️ Error checking folder : '<' not supported between instances of 'int' and 'str'
 No jobs found missing Aqua stage!
+
+username=admin
+password=admin
