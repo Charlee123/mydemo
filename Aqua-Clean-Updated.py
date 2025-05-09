@@ -6,7 +6,7 @@ import csv
 # -----------------------------
 # Aqua Security API Setup
 # -----------------------------
-AQUA_API_URL = 'https://codesec.aquasec.com'  # Replace with your Aqua API URL
+AQUA_API_URL = 'https://test.aquasec.com'  # Replace with your Aqua API URL
 
 def get_headers(api_token):
     return {
