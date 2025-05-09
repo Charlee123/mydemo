@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 # GitLab Connection Setup
 # -----------------------------
 GITLAB_URL = 'https://gitlab.com'  # Change this if self-hosted
-ACCESS_TOKEN = 'glpat-wJXweM94RF94Vbd-e9xy'  # Replace with your token
+ACCESS_TOKEN = 'test  # Replace with your token
 
 gl = gitlab.Gitlab(GITLAB_URL, private_token=ACCESS_TOKEN)
 
