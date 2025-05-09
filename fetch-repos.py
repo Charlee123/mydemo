@@ -14,7 +14,7 @@ warnings.simplefilter('ignore', InsecureRequestWarning)
 # -----------------------------
 # Configuration
 # -----------------------------
-AQUA_API_INFO = 'https://api.supply-chain.cloud.aquasec.com'
+AQUA_API_INFO = 'https://api.test.aquasec.com'
 INPUT_CSV = 'inactive_repos.csv'
 OUTPUT_CSV = 'fetched_repos.csv'
 LOG_FILE = 'fetch_repos.log'
