@@ -12,14 +12,14 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning  # type:
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)  # type: ignore
 
 # Jenkins config
-JENKINS_URL = 'https://jenkins-ca-prod.global.iff.com/'
+JENKINS_URL = 'https://jenkins-prod.com'
 USERNAME = 'test@gmail.com'
 PASSWORD = 'test'
 
 # Gmail SMTP config
-SENDER_EMAIL = 'sharear.appsec@gmail.com'  # Replace with your Gmail email
-APP_PASSWORD = 'bgse sbdh yvgl nfbv'  # Replace with your generated App Password
-RECIPIENT_EMAIL = 'shrear.ahmed@iff.com'  # Replace with recipient email
+SENDER_EMAIL = 'test@test.com'  # Replace with your Gmail email
+APP_PASSWORD = 'test'  # Replace with your generated App Password
+RECIPIENT_EMAIL = 'test@test.com'  # Replace with recipient email
 SMTP_SERVER = 'smtp.gmail.com'  # SMTP server for Gmail
 SMTP_PORT = 587  # SMTP port for TLS
 
@@ -27,8 +27,8 @@ SMTP_PORT = 587  # SMTP port for TLS
 TARGET_BRANCHES = ["main", "master", "dev", "qas", "prod"]
 
 # Email Recipients
-TO_EMAILS = ['sharear.ahmed@iff.com', 'sharear.ahmed@iff.com']  # Main recipients
-CC_EMAILS = ['sharear.ahmed@iff.com', 'sharear.ahmed@iff.com']  # CC recipients
+TO_EMAILS = ['sharear.ahmed@test.com', 'sharear.ahmed@test.com']  # Main recipients
+CC_EMAILS = ['sharear.ahmed@test.com', 'sharear.ahmed@test.com']  # CC recipients
 EMAIL_SUBJECT = '🔔 Jenkins Aqua Stage Check Report'
 EMAIL_BODY = """
 Hi Team,
